@@ -132,15 +132,27 @@ func TestFullLoop(t *testing.T) {
 		t.Fatalf("exec write exitCode = %d, want 0", ex.ExitCode)
 	}
 
-	// checkpoint
-	code, body = h.do(http.MethodPost, "/v1/sprites/s1/checkpoints", map[string]any{"label": "pre"})
+	// checkpoint: the server assigns the version id v1; the caller supplies a
+	// comment.
+	code, body = h.do(http.MethodPost, "/v1/sprites/s1/checkpoints", map[string]any{"comment": "pre-run"})
 	if code != http.StatusCreated {
 		t.Fatalf("checkpoint = %d %s", code, body)
 	}
 	var cp checkpointResponse
 	h.mustJSON(body, &cp)
-	if cp.CheckpointID != "pre" {
-		t.Fatalf("checkpointId = %q, want pre", cp.CheckpointID)
+	if cp.ID != "v1" {
+		t.Fatalf("checkpoint id = %q, want v1", cp.ID)
+	}
+
+	// list checkpoints reports v1 with its comment
+	code, body = h.do(http.MethodGet, "/v1/sprites/s1/checkpoints", nil)
+	if code != http.StatusOK {
+		t.Fatalf("list checkpoints = %d %s", code, body)
+	}
+	var list listCheckpointsResponse
+	h.mustJSON(body, &list)
+	if len(list.Checkpoints) != 1 || list.Checkpoints[0].ID != "v1" || list.Checkpoints[0].Comment != "pre-run" {
+		t.Fatalf("list = %+v, want [{v1 pre-run}]", list.Checkpoints)
 	}
 
 	// exec: corrupt via risky.sh (exit 1) — the server still returns 200 with
@@ -164,18 +176,21 @@ func TestFullLoop(t *testing.T) {
 		Status      string            `json:"status"`
 		URL         string            `json:"url"`
 		FS          map[string]string `json:"fs"`
-		Checkpoints []string          `json:"checkpoints"`
+		Checkpoints []struct {
+			ID      string `json:"id"`
+			Comment string `json:"comment"`
+		} `json:"checkpoints"`
 	}
 	h.mustJSON(body, &view)
 	if view.FS["/state"] != "bad" || view.FS["/work/output"] != "partial-corrupt" {
 		t.Fatalf("fs before restore = %v, want corrupt", view.FS)
 	}
-	if len(view.Checkpoints) != 1 || view.Checkpoints[0] != "pre" {
-		t.Fatalf("checkpoints = %v, want [pre]", view.Checkpoints)
+	if len(view.Checkpoints) != 1 || view.Checkpoints[0].ID != "v1" || view.Checkpoints[0].Comment != "pre-run" {
+		t.Fatalf("checkpoints = %+v, want [{v1 pre-run}]", view.Checkpoints)
 	}
 
-	// restore
-	if code, body := h.do(http.MethodPost, "/v1/sprites/s1/restore", map[string]any{"checkpoint": "pre"}); code != http.StatusOK {
+	// restore by id in the path
+	if code, body := h.do(http.MethodPost, "/v1/sprites/s1/checkpoints/v1/restore", nil); code != http.StatusOK {
 		t.Fatalf("restore = %d %s", code, body)
 	}
 
@@ -211,8 +226,9 @@ func TestFullLoop(t *testing.T) {
 	}
 }
 
-// TestDefaultCheckpointLabelOverHTTP confirms an omitted label yields cp-<n>.
-func TestDefaultCheckpointLabelOverHTTP(t *testing.T) {
+// TestCheckpointVersionIDOverHTTP confirms the server assigns v1 for the first
+// checkpoint even when the body carries no comment.
+func TestCheckpointVersionIDOverHTTP(t *testing.T) {
 	h := newHarness(t)
 	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "s"}); code != http.StatusCreated {
 		t.Fatalf("create = %d %s", code, body)
@@ -223,18 +239,34 @@ func TestDefaultCheckpointLabelOverHTTP(t *testing.T) {
 	}
 	var cp checkpointResponse
 	h.mustJSON(body, &cp)
-	if cp.CheckpointID != "cp-1" {
-		t.Fatalf("default checkpointId = %q, want cp-1", cp.CheckpointID)
+	if cp.ID != "v1" {
+		t.Fatalf("checkpoint id = %q, want v1", cp.ID)
 	}
 }
 
-// TestRestoreUnknownCheckpoint404 confirms an unknown label is a 404.
+// TestListCheckpointsEmpty confirms a sprite with no checkpoints lists as an
+// empty array, not null.
+func TestListCheckpointsEmpty(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "s"}); code != http.StatusCreated {
+		t.Fatalf("create = %d %s", code, body)
+	}
+	code, body := h.do(http.MethodGet, "/v1/sprites/s/checkpoints", nil)
+	if code != http.StatusOK {
+		t.Fatalf("list = %d %s", code, body)
+	}
+	if s := string(body); !strings.Contains(s, `"checkpoints":[]`) {
+		t.Fatalf("empty list body = %s, want checkpoints:[]", s)
+	}
+}
+
+// TestRestoreUnknownCheckpoint404 confirms an unknown id in the path is a 404.
 func TestRestoreUnknownCheckpoint404(t *testing.T) {
 	h := newHarness(t)
 	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "s"}); code != http.StatusCreated {
 		t.Fatalf("create = %d %s", code, body)
 	}
-	code, body := h.do(http.MethodPost, "/v1/sprites/s/restore", map[string]any{"checkpoint": "ghost"})
+	code, body := h.do(http.MethodPost, "/v1/sprites/s/checkpoints/v99/restore", nil)
 	if code != http.StatusNotFound {
 		t.Fatalf("restore unknown = %d %s, want 404", code, body)
 	}
@@ -255,6 +287,8 @@ func TestOpsOnMissingSprite(t *testing.T) {
 		{http.MethodGet, "/v1/sprites/ghost", nil},
 		{http.MethodPost, "/v1/sprites/ghost/exec", map[string]any{"cmd": "true"}},
 		{http.MethodPost, "/v1/sprites/ghost/checkpoints", map[string]any{}},
+		{http.MethodGet, "/v1/sprites/ghost/checkpoints", nil},
+		{http.MethodPost, "/v1/sprites/ghost/checkpoints/v1/restore", nil},
 		{http.MethodDelete, "/v1/sprites/ghost", nil},
 	} {
 		if code, body := h.do(tc.method, tc.path, tc.body); code != http.StatusNotFound {

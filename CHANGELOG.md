@@ -6,6 +6,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-11
+
+Corrects the checkpoint/restore surface to the confirmed real Sprites API. The
+provisional v0.1.0 shape treated the caller's label as the checkpoint id; the
+real API assigns the id and the caller controls only a comment.
+
+### Changed
+
+- Checkpoints are now addressed by a server-assigned version id (`v1`, `v2`, …),
+  assigned sequentially per sprite in creation order, not by a caller label. The
+  create body is `{comment?}` (an optional string) and the response is `{id}`
+  (the server id), replacing the previous `{label}` body and `{checkpointId}`
+  response.
+- Restore moved to `POST /v1/sprites/{name}/checkpoints/{id}/restore`, taking the
+  checkpoint id in the path with an empty body; an unknown id is a `404`. The old
+  `POST /v1/sprites/{name}/restore` route (with a `{checkpoint}` body) is removed.
+- `GET /v1/sprites/{name}` now exposes `checkpoints` as `[{id, comment}]` instead
+  of a sorted list of labels.
+- `/_spritzer/health`'s implemented-path list reflects the new surface (drops the
+  top-level `.../restore`, adds `.../checkpoints/{id}/restore` and
+  `GET .../checkpoints`).
+
+### Added
+
+- `GET /v1/sprites/{name}/checkpoints` lists a sprite's checkpoints as
+  `{checkpoints: [{id, comment}]}` in creation order, so a compensation workflow
+  can pick the newest checkpoint whose comment matches a stable handle.
+
+### Note
+
+- The REST `exec` response shape (`{stdout, stderr, exitCode}`) is kept unchanged
+  but is provisional: real exec is WebSocket-primary and the REST response shape
+  is not published (`TODO(confirm)`).
+
 ## [0.1.0] - 2026-07-11
 
 ### Added
@@ -30,5 +64,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Distroless container image, GoReleaser configuration, mkdocs-material doc site,
   and CI.
 
-[Unreleased]: https://github.com/intentius/spritzer/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/intentius/spritzer/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/intentius/spritzer/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/intentius/spritzer/releases/tag/v0.1.0

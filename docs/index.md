@@ -14,10 +14,11 @@ client talks to spritzer instead of the real service.
 
 Testing a Sprites client means testing against state. A command run with `exec`
 mutates a sprite's filesystem. A checkpoint captures that filesystem under a
-label. A restore rewinds to it. This is the checkpoint-as-compensation pattern:
-a workflow checkpoints before a risky step and, on failure, restores the label
-instead of unwinding with an inverse action. A schema mock has no memory, so it
-cannot model any of that. spritzer does.
+server-assigned version id (`v1`, `v2`, …). A restore rewinds to it. This is the
+checkpoint-as-compensation pattern: a workflow checkpoints before a risky step
+and, on failure, restores that checkpoint instead of unwinding with an inverse
+action. A schema mock has no memory, so it cannot model any of that. spritzer
+does.
 
 spritzer is wire-compatible with the in-process Sprites fake in the `chant`
 lexicon (`sprites-fake.ts`): the endpoint shapes and the exec interpreter match

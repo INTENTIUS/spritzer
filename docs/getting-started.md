@@ -41,13 +41,13 @@ BASE=http://localhost:4290
 # Create a sprite (its name is its id).
 curl -s -X POST "$BASE/v1/sprites" -d '{"name":"demo"}'
 
-# Seed state, checkpoint it, then corrupt it and fail.
+# Seed state, checkpoint it (the server assigns id v1), then corrupt it and fail.
 curl -s -X POST "$BASE/v1/sprites/demo/exec" -d '{"cmd":"echo good > /state"}'
-curl -s -X POST "$BASE/v1/sprites/demo/checkpoints" -d '{"label":"pre"}'
+curl -s -X POST "$BASE/v1/sprites/demo/checkpoints" -d '{"comment":"pre-run"}'
 curl -s -X POST "$BASE/v1/sprites/demo/exec" -d '{"cmd":"./risky.sh"}'
 
-# Restore rewinds the filesystem to the checkpoint.
-curl -s -X POST "$BASE/v1/sprites/demo/restore" -d '{"checkpoint":"pre"}'
+# Restore rewinds the filesystem to the checkpoint, by id in the path.
+curl -s -X POST "$BASE/v1/sprites/demo/checkpoints/v1/restore"
 curl -s "$BASE/v1/sprites/demo" | jq '{id, status, fs, checkpoints}'
 ```
 

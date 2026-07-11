@@ -21,7 +21,8 @@ var implementedPaths = []string{
 	"POST /v1/sprites",
 	"POST /v1/sprites/{id}/exec",
 	"POST /v1/sprites/{id}/checkpoints",
-	"POST /v1/sprites/{id}/restore",
+	"GET /v1/sprites/{id}/checkpoints",
+	"POST /v1/sprites/{id}/checkpoints/{cid}/restore",
 	"DELETE /v1/sprites/{id}",
 	"GET /v1/sprites/{id}",
 	"GET /_spritzer/health",
@@ -71,7 +72,8 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /v1/sprites", s.createSprite)
 	mux.HandleFunc("POST /v1/sprites/{id}/exec", s.execSprite)
 	mux.HandleFunc("POST /v1/sprites/{id}/checkpoints", s.checkpointSprite)
-	mux.HandleFunc("POST /v1/sprites/{id}/restore", s.restoreSprite)
+	mux.HandleFunc("GET /v1/sprites/{id}/checkpoints", s.listCheckpoints)
+	mux.HandleFunc("POST /v1/sprites/{id}/checkpoints/{cid}/restore", s.restoreCheckpoint)
 	mux.HandleFunc("DELETE /v1/sprites/{id}", s.destroySprite)
 	mux.HandleFunc("GET /v1/sprites/{id}", s.getSprite)
 
@@ -101,19 +103,23 @@ type execRequest struct {
 	Cmd string `json:"cmd"`
 }
 
-// checkpointRequest is the body of POST /v1/sprites/{id}/checkpoints.
+// checkpointRequest is the body of POST /v1/sprites/{id}/checkpoints. The
+// caller supplies only an optional comment; the checkpoint id is
+// server-assigned.
 type checkpointRequest struct {
-	Label string `json:"label,omitempty"`
+	Comment string `json:"comment,omitempty"`
 }
 
-// checkpointResponse is the POST /v1/sprites/{id}/checkpoints response.
+// checkpointResponse is the POST /v1/sprites/{id}/checkpoints response, carrying
+// the server-assigned version id (v1, v2, …).
 type checkpointResponse struct {
-	CheckpointID string `json:"checkpointId"`
+	ID string `json:"id"`
 }
 
-// restoreRequest is the body of POST /v1/sprites/{id}/restore.
-type restoreRequest struct {
-	Checkpoint string `json:"checkpoint"`
+// listCheckpointsResponse is the GET /v1/sprites/{id}/checkpoints response, the
+// checkpoints in creation order (oldest first).
+type listCheckpointsResponse struct {
+	Checkpoints []sprite.CheckpointInfo `json:"checkpoints"`
 }
 
 // ErrorResponse is the JSON body spritzer returns for any non-2xx status. It
@@ -138,6 +144,9 @@ func (s *Server) createSprite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, createResponse{ID: created.ID, URL: created.URL})
 }
 
+// execSprite runs a command in a sprite over the REST exec endpoint. The
+// response shape is provisional; see the ExecResult TODO(confirm) note: real
+// exec is WebSocket-primary and the REST response shape is not published.
 func (s *Server) execSprite(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req execRequest
@@ -157,22 +166,28 @@ func (s *Server) checkpointSprite(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeJSON(w, r, &req) {
 		return
 	}
-	label, err := s.store.Checkpoint(id, req.Label)
+	cid, err := s.store.Checkpoint(id, req.Comment)
 	if s.handleLookupError(w, id, err) {
 		return
 	}
-	writeJSON(w, http.StatusCreated, checkpointResponse{CheckpointID: label})
+	writeJSON(w, http.StatusCreated, checkpointResponse{ID: cid})
 }
 
-func (s *Server) restoreSprite(w http.ResponseWriter, r *http.Request) {
+func (s *Server) listCheckpoints(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var req restoreRequest
-	if !s.decodeJSON(w, r, &req) {
+	cps, err := s.store.ListCheckpoints(id)
+	if s.handleLookupError(w, id, err) {
 		return
 	}
-	err := s.store.Restore(id, req.Checkpoint)
+	writeJSON(w, http.StatusOK, listCheckpointsResponse{Checkpoints: cps})
+}
+
+func (s *Server) restoreCheckpoint(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	cid := r.PathValue("cid")
+	err := s.store.Restore(id, cid)
 	if errors.Is(err, sprite.ErrCheckpointNotFound) {
-		s.writeError(w, http.StatusNotFound, "no checkpoint \""+req.Checkpoint+"\" for sprite "+id)
+		s.writeError(w, http.StatusNotFound, "no checkpoint \""+cid+"\" for sprite "+id)
 		return
 	}
 	if s.handleLookupError(w, id, err) {
