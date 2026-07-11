@@ -1,0 +1,90 @@
+# GoReleaser configuration. See https://goreleaser.com
+version: 2
+
+project_name: spritzer
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: spritzer
+    main: ./cmd/spritzer
+    binary: spritzer
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: spritzer
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: checksums.txt
+
+dockers:
+  - image_templates:
+      - "ghcr.io/intentius/spritzer:{{ .Version }}-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/intentius/spritzer"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+  - image_templates:
+      - "ghcr.io/intentius/spritzer:{{ .Version }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/intentius/spritzer"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+
+docker_manifests:
+  - name_template: "ghcr.io/intentius/spritzer:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/intentius/spritzer:{{ .Version }}-amd64"
+      - "ghcr.io/intentius/spritzer:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/intentius/spritzer:latest"
+    image_templates:
+      - "ghcr.io/intentius/spritzer:{{ .Version }}-amd64"
+      - "ghcr.io/intentius/spritzer:{{ .Version }}-arm64"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: intentius
+    name: spritzer

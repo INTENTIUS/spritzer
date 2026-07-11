@@ -1,0 +1,16 @@
+# Keep the build context small and reproducible.
+.git/
+.github/
+dist/
+site/
+docs/
+*.md
+!README.md
+Makefile
+justfile
+.golangci.yml
+.goreleaser.yaml
+mkdocs.yml
+coverage.out
+*.test
+.DS_Store

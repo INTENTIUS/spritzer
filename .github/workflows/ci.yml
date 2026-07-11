@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go build, vet, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: gofmt
+        run: |
+          fmtout=$(gofmt -l .)
+          if [ -n "$fmtout" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$fmtout"
+            exit 1
+          fi
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+
+      - name: Test with race and coverage
+        run: go test -race -coverprofile=coverage.out ./...
+
+  docs:
+    name: Docs build (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install mkdocs-material
+        run: pip install mkdocs-material
+
+      - name: Build docs (strict)
+        run: mkdocs build --strict

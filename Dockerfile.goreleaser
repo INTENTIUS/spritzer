@@ -1,0 +1,8 @@
+# Minimal image for GoReleaser: the binary is already built by the `builds`
+# stage and staged in the build context, so we only copy it in. (The top-level
+# Dockerfile builds from source for local `docker build` / `just docker`.)
+FROM gcr.io/distroless/static:nonroot
+COPY spritzer /usr/local/bin/spritzer
+EXPOSE 4290
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/spritzer"]

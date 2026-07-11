@@ -1,0 +1,45 @@
+site_name: spritzer
+site_description: A standalone, stateful local emulator of the Fly.io Sprites API.
+site_url: https://intentius.github.io/spritzer/
+repo_url: https://github.com/intentius/spritzer
+repo_name: intentius/spritzer
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.top
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - API coverage: api-coverage.md
+  - Fidelity: fidelity.md
+  - Contributing: contributing.md

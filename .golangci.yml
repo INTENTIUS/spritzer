@@ -1,0 +1,30 @@
+# golangci-lint v2 configuration.
+# Run locally with `just lint` (or `make lint`); CI runs the same set.
+version: "2"
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - revive
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+        - name: package-comments
+          disabled: false
+  exclusions:
+    generated: lax
+    rules:
+      # Test helpers are allowed to skip error checks on cleanup paths.
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

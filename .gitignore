@@ -1,0 +1,26 @@
+# Binaries
+/spritzer
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test and coverage output
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editor and OS cruft
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# mkdocs build output
+/site/
