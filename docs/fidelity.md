@@ -31,12 +31,16 @@ matching shell `;` semantics.
 
 ## Checkpoint and restore
 
-A checkpoint deep-copies the filesystem under a label (an omitted label defaults
-to `cp-<n>`, one past the current count). A restore replaces the filesystem with
-that copy and returns the sprite to `running`; restoring an unknown label is a
-`404`. Because the checkpoint is a deep copy, mutating the filesystem after a
-checkpoint does not change what a later restore rewinds to — this is the
-checkpoint-as-compensation guarantee a guarded workflow relies on.
+A checkpoint deep-copies the filesystem under a server-assigned version id
+(`v1`, `v2`, …, one past the current count); the caller supplies only an
+optional comment. A restore addresses a checkpoint by its id in the path,
+replaces the filesystem with that copy, and returns the sprite to `running`;
+restoring an unknown id is a `404`. `GET .../checkpoints` lists the checkpoints
+as `{id, comment}` in creation order, so a compensation workflow can use the
+comment as a stable handle and restore the newest matching one. Because the
+checkpoint is a deep copy, mutating the filesystem after a checkpoint does not
+change what a later restore rewinds to — this is the checkpoint-as-compensation
+guarantee a guarded workflow relies on.
 
 ## What spritzer does not do
 

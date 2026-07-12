@@ -25,13 +25,15 @@ it, so the same integration suite passes against the spritzer container image.
 ## Features
 
 - Stateful in-memory store of sprites keyed by name, each with a filesystem
-  (path → contents) and a set of labeled checkpoints.
+  (path → contents) and an ordered list of checkpoints.
 - `exec` runs a small scripted interpreter (`echo > path`, `echo`, `cat`, `rm`,
   `true`/`false`, `./risky.sh`, and an echo-back default) so a command can write,
   overwrite, or fail a filesystem key and the result is observable.
-- Checkpoint / restore: a checkpoint deep-copies the filesystem under a label; a
-  restore replaces the filesystem with that copy and returns the sprite to
-  `running`. This is the checkpoint-as-compensation primitive.
+- Checkpoint / restore: a checkpoint deep-copies the filesystem under a
+  server-assigned version id (`v1`, `v2`, …) with an optional caller comment; a
+  restore takes a checkpoint id in the path, replaces the filesystem with that
+  copy, and returns the sprite to `running`. This is the
+  checkpoint-as-compensation primitive.
 - A destroyed or missing sprite returns `404` on any subsequent operation.
 - A `/_spritzer/health` endpoint reporting version and implemented paths.
 - Single static binary and distroless container image; no runtime dependencies.
@@ -70,19 +72,23 @@ BASE=http://localhost:4290
 curl -s -X POST "$BASE/v1/sprites" -d '{"name":"demo"}'
 # => {"id":"demo","url":"http://localhost:4290/s/demo"}
 
-# Seed state, then checkpoint it.
+# Seed state, then checkpoint it. The server assigns the version id.
 curl -s -X POST "$BASE/v1/sprites/demo/exec" -d '{"cmd":"echo good > /state"}'
-curl -s -X POST "$BASE/v1/sprites/demo/checkpoints" -d '{"label":"pre"}'
-# => {"checkpointId":"pre"}
+curl -s -X POST "$BASE/v1/sprites/demo/checkpoints" -d '{"comment":"pre-run"}'
+# => {"id":"v1"}
+
+# List the checkpoints (creation order).
+curl -s "$BASE/v1/sprites/demo/checkpoints"
+# => {"checkpoints":[{"id":"v1","comment":"pre-run"}]}
 
 # Run a risky step that corrupts state and fails.
 curl -s -X POST "$BASE/v1/sprites/demo/exec" -d '{"cmd":"./risky.sh"}'
 # => {"stdout":"","stderr":"risky.sh: failed\n","exitCode":1}
 
-# Restore rewinds the filesystem to the checkpoint.
-curl -s -X POST "$BASE/v1/sprites/demo/restore" -d '{"checkpoint":"pre"}'
+# Restore rewinds the filesystem to the checkpoint, addressed by id in the path.
+curl -s -X POST "$BASE/v1/sprites/demo/checkpoints/v1/restore"
 curl -s "$BASE/v1/sprites/demo"
-# => {"id":"demo","status":"running","url":"...","fs":{"/state":"good"},"checkpoints":["pre"]}
+# => {"id":"demo","status":"running","url":"...","fs":{"/state":"good"},"checkpoints":[{"id":"v1","comment":"pre-run"}]}
 ```
 
 ## Comparison
@@ -98,8 +104,8 @@ curl -s "$BASE/v1/sprites/demo"
 
 ## API coverage
 
-Implemented: create, exec, checkpoint, restore, destroy, and an inspection
-`GET`, plus a `/_spritzer/health` report. The full table is in the
+Implemented: create, exec, checkpoint, list checkpoints, restore-by-id, destroy,
+and an inspection `GET`, plus a `/_spritzer/health` report. The full table is in the
 [API coverage docs](https://intentius.github.io/spritzer/api-coverage/).
 
 ## Development

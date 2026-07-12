@@ -135,8 +135,8 @@ func TestExecInterpreter(t *testing.T) {
 }
 
 // TestCheckpointRestoreRewind is the headline proof: create -> write a key ->
-// checkpoint -> run the risky step (corrupts fs, exits 1) -> restore -> the key
-// is rewound and status is running again.
+// checkpoint (server assigns v1) -> run the risky step (corrupts fs, exits 1) ->
+// restore v1 -> the key is rewound and status is running again.
 func TestCheckpointRestoreRewind(t *testing.T) {
 	st := New(clock.NewFake(time.Time{}))
 	st.Create("guard-1", "http://localhost/s/guard-1", nil)
@@ -145,10 +145,10 @@ func TestCheckpointRestoreRewind(t *testing.T) {
 	if r, err := st.Exec("guard-1", "echo good > /state"); err != nil || r.ExitCode != 0 {
 		t.Fatalf("seed exec = %+v, %v", r, err)
 	}
-	// Checkpoint the good state.
-	label, err := st.Checkpoint("guard-1", "pre-run")
-	if err != nil || label != "pre-run" {
-		t.Fatalf("checkpoint = %q, %v", label, err)
+	// Checkpoint the good state with a comment; the server assigns id v1.
+	cid, err := st.Checkpoint("guard-1", "pre-run")
+	if err != nil || cid != "v1" {
+		t.Fatalf("checkpoint = %q, %v, want v1", cid, err)
 	}
 	// Run the risky step: overwrites /state then fails.
 	r, err := st.Exec("guard-1", "echo bad > /state; ./risky.sh")
@@ -163,8 +163,8 @@ func TestCheckpointRestoreRewind(t *testing.T) {
 	if view.FS["/state"] != "bad" || view.FS["/work/output"] != "partial-corrupt" {
 		t.Fatalf("fs before restore = %v, want corrupt", view.FS)
 	}
-	// Restore rewinds the fs to the checkpoint (only /state=good) and status runs.
-	if err := st.Restore("guard-1", "pre-run"); err != nil {
+	// Restore v1 rewinds the fs to the checkpoint (only /state=good) and runs.
+	if err := st.Restore("guard-1", cid); err != nil {
 		t.Fatalf("restore = %v", err)
 	}
 	view, _ = st.Get("guard-1")
@@ -176,14 +176,46 @@ func TestCheckpointRestoreRewind(t *testing.T) {
 	}
 }
 
-// TestDefaultCheckpointLabel confirms an empty label defaults to cp-<n>.
-func TestDefaultCheckpointLabel(t *testing.T) {
+// TestCheckpointVersionIDs confirms ids are server-assigned sequentially (v1,
+// v2, …) regardless of the caller's comment, and the list reports them in
+// creation order with their comments.
+func TestCheckpointVersionIDs(t *testing.T) {
 	st := New(nil)
 	st.Create("s", "http://h/s/s", nil)
-	first, _ := st.Checkpoint("s", "")
-	second, _ := st.Checkpoint("s", "")
-	if first != "cp-1" || second != "cp-2" {
-		t.Fatalf("default labels = %q, %q, want cp-1, cp-2", first, second)
+	first, _ := st.Checkpoint("s", "pre-run")
+	second, _ := st.Checkpoint("s", "") // empty comment still gets a version id
+	if first != "v1" || second != "v2" {
+		t.Fatalf("checkpoint ids = %q, %q, want v1, v2", first, second)
+	}
+	cps, err := st.ListCheckpoints("s")
+	if err != nil {
+		t.Fatalf("list = %v", err)
+	}
+	want := []CheckpointInfo{{ID: "v1", Comment: "pre-run"}, {ID: "v2", Comment: ""}}
+	if !reflect.DeepEqual(cps, want) {
+		t.Fatalf("list = %v, want %v", cps, want)
+	}
+}
+
+// TestRestoreByIDRewinds confirms restoring an explicit earlier id (v1) rewinds
+// the fs to that checkpoint even after a later checkpoint (v2) captured newer
+// state.
+func TestRestoreByIDRewinds(t *testing.T) {
+	st := New(nil)
+	st.Create("s", "http://h/s/s", nil)
+	_, _ = st.Exec("s", "echo one > /f")
+	v1, _ := st.Checkpoint("s", "first")
+	_, _ = st.Exec("s", "echo two > /f")
+	v2, _ := st.Checkpoint("s", "second")
+	if v1 != "v1" || v2 != "v2" {
+		t.Fatalf("ids = %q, %q, want v1, v2", v1, v2)
+	}
+	if err := st.Restore("s", "v1"); err != nil {
+		t.Fatalf("restore v1 = %v", err)
+	}
+	view, _ := st.Get("s")
+	if view.FS["/f"] != "one" {
+		t.Fatalf("restored /f = %q, want one (restore-by-id must target v1)", view.FS["/f"])
 	}
 }
 
@@ -212,12 +244,12 @@ func TestDestroyedSpriteIsNotFound(t *testing.T) {
 	}
 }
 
-// TestRestoreUnknownCheckpoint confirms an unknown label reports
+// TestRestoreUnknownCheckpoint confirms an unknown id reports
 // ErrCheckpointNotFound.
 func TestRestoreUnknownCheckpoint(t *testing.T) {
 	st := New(nil)
 	st.Create("s", "http://h/s/s", nil)
-	if err := st.Restore("s", "nope"); !errors.Is(err, ErrCheckpointNotFound) {
+	if err := st.Restore("s", "v99"); !errors.Is(err, ErrCheckpointNotFound) {
 		t.Fatalf("restore unknown = %v, want ErrCheckpointNotFound", err)
 	}
 }
@@ -228,9 +260,9 @@ func TestCheckpointIsDeepCopied(t *testing.T) {
 	st := New(nil)
 	st.Create("s", "http://h/s/s", nil)
 	_, _ = st.Exec("s", "echo one > /f")
-	_, _ = st.Checkpoint("s", "cp")
+	cid, _ := st.Checkpoint("s", "cp")
 	_, _ = st.Exec("s", "echo two > /f") // mutate after checkpoint
-	if err := st.Restore("s", "cp"); err != nil {
+	if err := st.Restore("s", cid); err != nil {
 		t.Fatalf("restore = %v", err)
 	}
 	view, _ := st.Get("s")
