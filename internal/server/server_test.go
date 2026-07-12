@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -77,8 +78,13 @@ func (h *harness) checkpointID(name, comment string) string {
 	return completeID(h.t, raw)
 }
 
-// completeID scans an NDJSON progress body and returns the id carried by the
-// terminal {"event":"complete"} line.
+// idFromData mines the version id out of a progress message, mirroring how a
+// real client reads it: the "  ID: v1" detail line and the "Checkpoint v1
+// created successfully" completion line both carry it.
+var idFromData = regexp.MustCompile(`(?:(?:^|\s)ID:\s*|Checkpoint\s+)(\S+)`)
+
+// completeID scans an NDJSON progress body and returns the version id mined from
+// the message text, requiring a terminal {"type":"complete"} line.
 func completeID(t *testing.T, raw []byte) string {
 	t.Helper()
 	var id string
@@ -91,8 +97,10 @@ func completeID(t *testing.T, raw []byte) string {
 		if err := json.Unmarshal(line, &ev); err != nil {
 			t.Fatalf("ndjson line %q: %v", line, err)
 		}
-		if ev.Event == "complete" {
-			id = ev.ID
+		if m := idFromData.FindStringSubmatch(ev.Data); m != nil {
+			id = m[1]
+		}
+		if ev.Type == "complete" {
 			sawComplete = true
 		}
 	}

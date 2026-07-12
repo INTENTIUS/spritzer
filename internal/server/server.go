@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/intentius/spritzer/internal/clock"
 	"github.com/intentius/spritzer/internal/sprite"
@@ -41,6 +42,7 @@ type Server struct {
 	version string
 	log     *slog.Logger
 	store   *sprite.Store
+	clock   clock.Clock
 	mux     *http.ServeMux
 }
 
@@ -59,6 +61,7 @@ func New(opts Options) *Server {
 		version: opts.Version,
 		log:     opts.Logger,
 		store:   sprite.New(opts.Clock),
+		clock:   opts.Clock,
 	}
 	s.routes()
 	return s
@@ -108,11 +111,24 @@ type checkpointRequest struct {
 
 // progressEvent is one line of the NDJSON progress stream that the checkpoint
 // create and restore endpoints emit, mirroring the real Sprites API's
-// line-delimited progress body. The terminal event is {"event":"complete","id":"v<N>"}.
+// line-delimited progress body: each line is tagged with a "type" ("info" or
+// "complete") and a human "data" message. There is no structured id field — the
+// version id rides inside the message text ("  ID: v1", "Checkpoint v1 created
+// successfully"), exactly as api.sprites.dev streams it.
 type progressEvent struct {
-	Event   string `json:"event"`
-	Message string `json:"message,omitempty"`
-	ID      string `json:"id,omitempty"`
+	Type string `json:"type"`
+	Data string `json:"data"`
+	Time string `json:"time,omitempty"`
+}
+
+// info builds an "info" progress line stamped with the server clock.
+func (s *Server) info(data string) progressEvent {
+	return progressEvent{Type: "info", Data: data, Time: s.clock.Now().UTC().Format(time.RFC3339Nano)}
+}
+
+// complete builds the terminal "complete" progress line stamped with the clock.
+func (s *Server) complete(data string) progressEvent {
+	return progressEvent{Type: "complete", Data: data, Time: s.clock.Now().UTC().Format(time.RFC3339Nano)}
 }
 
 // ErrorResponse is the JSON body spritzer returns for any non-2xx status. It
@@ -138,8 +154,9 @@ func (s *Server) createSprite(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkpointSprite creates a checkpoint and streams NDJSON progress events. The
-// store assigns the version id (v1, v2, …); the response is an info event
-// followed by a terminal complete event carrying that id. The sprite lookup
+// store assigns the version id (v1, v2, …); the stream reports it in the message
+// text ("  ID: v1" and the terminal "Checkpoint v1 created successfully"),
+// matching real Sprites, which carries no structured id field. The sprite lookup
 // error is resolved before the stream starts so an unknown sprite is a plain
 // 404 rather than a half-written stream.
 func (s *Server) checkpointSprite(w http.ResponseWriter, r *http.Request) {
@@ -153,8 +170,11 @@ func (s *Server) checkpointSprite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeNDJSON(w, []progressEvent{
-		{Event: "info", Message: "creating checkpoint"},
-		{Event: "complete", Message: "checkpoint created", ID: cid},
+		s.info("Creating checkpoint..."),
+		s.info("Checkpoint created successfully"),
+		s.info("  ID: " + cid),
+		s.info("  Path: checkpoints/" + cid),
+		s.complete("Checkpoint " + cid + " created successfully"),
 	})
 }
 
@@ -198,8 +218,8 @@ func (s *Server) restoreCheckpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeNDJSON(w, []progressEvent{
-		{Event: "info", Message: "restoring checkpoint " + cid},
-		{Event: "complete", Message: "checkpoint restored", ID: cid},
+		s.info("Restoring checkpoint " + cid + "..."),
+		s.complete("Checkpoint " + cid + " restored successfully"),
 	})
 }
 
