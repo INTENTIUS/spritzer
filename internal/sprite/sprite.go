@@ -43,21 +43,26 @@ var (
 )
 
 // Checkpoint is a captured filesystem snapshot: a server-assigned version id
-// (v1, v2, …), the caller-supplied comment, and a full copy of the fs at
-// checkpoint time.
+// (v1, v2, …), the caller-supplied comment, the creation timestamp, whether it
+// was created automatically, and a full copy of the fs at checkpoint time.
 type Checkpoint struct {
-	ID      string
-	Comment string
-	FS      map[string]string
+	ID         string
+	Comment    string
+	CreateTime string
+	IsAuto     bool
+	FS         map[string]string
 }
 
-// CheckpointInfo is the id+comment projection of a checkpoint, without its fs
-// copy. It is what the list endpoint and the GET view expose so a client can
-// pick a checkpoint by id (or, for compensation, by the newest matching
-// comment).
+// CheckpointInfo is the metadata projection of a checkpoint, without its fs
+// copy. It is what the list endpoint, the individual GET, and the sprite view
+// expose so a client can pick a checkpoint by id (or, for compensation, by the
+// newest matching comment). The JSON tags match the real Sprites checkpoint
+// shape: id, comment, create_time, is_auto.
 type CheckpointInfo struct {
-	ID      string `json:"id"`
-	Comment string `json:"comment"`
+	ID         string `json:"id"`
+	Comment    string `json:"comment"`
+	CreateTime string `json:"create_time"`
+	IsAuto     bool   `json:"is_auto"`
 }
 
 // Sprite is a single sprite: its lifecycle status, its addressable URL, its
@@ -75,18 +80,14 @@ type Sprite struct {
 	CreatedAt string
 }
 
-// ExecResult is the outcome of running a command in a sprite. The JSON tags
-// match the Sprites REST exec response (note the camelCase exitCode).
-//
-// TODO(confirm REST exec response against real Sprites): real exec is
-// WebSocket-primary (WSS /v1/sprites/{name}/exec?cmd=). The REST POST is the
-// documented alternative, but its exact response shape is not published; this
-// {stdout,stderr,exitCode} shape is provisional and kept for the emulator + the
-// Op loop.
+// ExecResult is the outcome of running a command in a sprite. The server's
+// control-WebSocket exec handler carries these three fields to the client as
+// framed messages: stdout as StreamStdout, stderr as StreamStderr, and the exit
+// code as the StreamExit frame's single payload byte.
 type ExecResult struct {
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	ExitCode int    `json:"exitCode"`
+	Stdout   string
+	Stderr   string
+	ExitCode int
 }
 
 // View is the read-only projection returned by GET /v1/sprites/{id}: the
@@ -160,11 +161,31 @@ func (s *Store) Checkpoint(id, comment string) (string, error) {
 	}
 	cid := fmt.Sprintf("v%d", len(sp.Checkpoints)+1)
 	sp.Checkpoints = append(sp.Checkpoints, Checkpoint{
-		ID:      cid,
-		Comment: comment,
-		FS:      cloneFS(sp.FS),
+		ID:         cid,
+		Comment:    comment,
+		CreateTime: s.clk.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00"),
+		IsAuto:     false,
+		FS:         cloneFS(sp.FS),
 	})
 	return cid, nil
+}
+
+// GetCheckpoint returns a single checkpoint's metadata projection. It returns
+// ErrNotFound for a missing or destroyed sprite, and ErrCheckpointNotFound for
+// an unknown id.
+func (s *Store) GetCheckpoint(id, checkpointID string) (CheckpointInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sp, err := s.live(id)
+	if err != nil {
+		return CheckpointInfo{}, err
+	}
+	for i := range sp.Checkpoints {
+		if sp.Checkpoints[i].ID == checkpointID {
+			return checkpointInfo(sp.Checkpoints[i]), nil
+		}
+	}
+	return CheckpointInfo{}, ErrCheckpointNotFound
 }
 
 // ListCheckpoints returns the sprite's checkpoints as {id, comment} projections
@@ -232,14 +253,24 @@ func (s *Store) Get(id string) (View, error) {
 	}, nil
 }
 
-// checkpointInfos projects a checkpoint list to its id+comment view, always
+// checkpointInfos projects a checkpoint list to its metadata view, always
 // returning a non-nil slice so it marshals as [] rather than null.
 func checkpointInfos(cps []Checkpoint) []CheckpointInfo {
 	out := make([]CheckpointInfo, 0, len(cps))
 	for _, cp := range cps {
-		out = append(out, CheckpointInfo{ID: cp.ID, Comment: cp.Comment})
+		out = append(out, checkpointInfo(cp))
 	}
 	return out
+}
+
+// checkpointInfo projects a single checkpoint to its metadata view.
+func checkpointInfo(cp Checkpoint) CheckpointInfo {
+	return CheckpointInfo{
+		ID:         cp.ID,
+		Comment:    cp.Comment,
+		CreateTime: cp.CreateTime,
+		IsAuto:     cp.IsAuto,
+	}
 }
 
 // live finds a sprite without locking (callers hold s.mu). A destroyed sprite is
@@ -260,7 +291,8 @@ func cloneSprite(sp *Sprite) *Sprite {
 	if sp.Checkpoints != nil {
 		cps := make([]Checkpoint, len(sp.Checkpoints))
 		for i, cp := range sp.Checkpoints {
-			cps[i] = Checkpoint{ID: cp.ID, Comment: cp.Comment, FS: cloneFS(cp.FS)}
+			cps[i] = cp
+			cps[i].FS = cloneFS(cp.FS)
 		}
 		c.Checkpoints = cps
 	}

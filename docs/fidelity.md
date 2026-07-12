@@ -22,22 +22,30 @@ spritzer creates sprites `running`, and a restore returns a sprite to `running`.
 
 ## The filesystem and exec
 
-A sprite's filesystem is a `path -> contents` map. `exec` runs a small scripted
-interpreter (not a real shell) so a test can write a key, then overwrite or fail
-it, and prove that a later restore rewinds. See
-[API coverage](api-coverage.md#the-exec-interpreter) for the recognized forms.
-Segments split on `;` run in order and the last segment's exit code wins,
-matching shell `;` semantics.
+A sprite's filesystem is a `path -> contents` map. `exec` is a control
+WebSocket at `GET /v1/sprites/{id}/exec` that speaks the real Sprites SDK's
+framed protocol (`[streamID][payload]`; see
+[the exec control WebSocket](api-coverage.md#the-exec-control-websocket)). Behind
+the frames it runs a small scripted interpreter (not a real shell) so a test can
+write a key, then overwrite or fail it, and prove that a later restore rewinds.
+See [API coverage](api-coverage.md#the-exec-interpreter) for the recognized
+forms. Segments split on `;` run in order and the last segment's exit code wins,
+matching shell `;` semantics. The framing is faithful; the command execution
+behind it is a deliberate limitation (a scripted interpreter, not a sandbox).
 
 ## Checkpoint and restore
 
-A checkpoint deep-copies the filesystem under a server-assigned version id
-(`v1`, `v2`, …, one past the current count); the caller supplies only an
-optional comment. A restore addresses a checkpoint by its id in the path,
-replaces the filesystem with that copy, and returns the sprite to `running`;
-restoring an unknown id is a `404`. `GET .../checkpoints` lists the checkpoints
-as `{id, comment}` in creation order, so a compensation workflow can use the
-comment as a stable handle and restore the newest matching one. Because the
+Create is `POST /v1/sprites/{id}/checkpoint` (singular) and streams NDJSON
+progress, ending in `{"event":"complete","id":"v<N>"}`. A checkpoint deep-copies
+the filesystem under a server-assigned version id (`v1`, `v2`, …, one past the
+current count), stamping a `create_time` and an `is_auto` flag (false for manual
+checkpoints); the caller supplies only an optional comment. A restore addresses a
+checkpoint by its id in the path, streams NDJSON progress, replaces the
+filesystem with that copy, and returns the sprite to `running`; restoring an
+unknown id is a `404` before the stream starts. `GET .../checkpoints` lists the
+checkpoints as a bare array of `{id, comment, create_time, is_auto}` in creation
+order, so a compensation workflow can use the comment as a stable handle and
+restore the newest matching one. Because the
 checkpoint is a deep copy, mutating the filesystem after a checkpoint does not
 change what a later restore rewinds to — this is the checkpoint-as-compensation
 guarantee a guarded workflow relies on.

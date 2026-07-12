@@ -26,13 +26,17 @@ it, so the same integration suite passes against the spritzer container image.
 
 - Stateful in-memory store of sprites keyed by name, each with a filesystem
   (path → contents) and an ordered list of checkpoints.
-- `exec` runs a small scripted interpreter (`echo > path`, `echo`, `cat`, `rm`,
-  `true`/`false`, `./risky.sh`, and an echo-back default) so a command can write,
-  overwrite, or fail a filesystem key and the result is observable.
-- Checkpoint / restore: a checkpoint deep-copies the filesystem under a
-  server-assigned version id (`v1`, `v2`, …) with an optional caller comment; a
-  restore takes a checkpoint id in the path, replaces the filesystem with that
-  copy, and returns the sprite to `running`. This is the
+- `exec` is a control WebSocket at `GET /v1/sprites/{id}/exec` speaking the real
+  Sprites SDK's framed protocol: each binary message is `[streamID][payload]`
+  (StreamStdin=0, StreamStdout=1, StreamStderr=2, StreamExit=3, StreamStdinEOF=4).
+  Behind the frames a small scripted interpreter (`echo > path`, `echo`, `cat`,
+  `rm`, `true`/`false`, `./risky.sh`, and an echo-back default) writes,
+  overwrites, or fails a filesystem key so the result is observable.
+- Checkpoint / restore: create is `POST /v1/sprites/{id}/checkpoint` (singular),
+  streaming NDJSON progress and assigning a server version id (`v1`, `v2`, …) with
+  an optional caller comment; the list is a bare array with `create_time` and
+  `is_auto`; restore takes a checkpoint id in the path, streams NDJSON, replaces
+  the filesystem with that copy, and returns the sprite to `running`. This is the
   checkpoint-as-compensation primitive.
 - A destroyed or missing sprite returns `404` on any subsequent operation.
 - A `/_spritzer/health` endpoint reporting version and implemented paths.
@@ -72,24 +76,29 @@ BASE=http://localhost:4290
 curl -s -X POST "$BASE/v1/sprites" -d '{"name":"demo"}'
 # => {"id":"demo","url":"http://localhost:4290/s/demo"}
 
-# Seed state, then checkpoint it. The server assigns the version id.
-curl -s -X POST "$BASE/v1/sprites/demo/exec" -d '{"cmd":"echo good > /state"}'
-curl -s -X POST "$BASE/v1/sprites/demo/checkpoints" -d '{"comment":"pre-run"}'
-# => {"id":"v1"}
+# Checkpoint the current state. The server assigns the version id and streams
+# NDJSON progress; the id is on the terminal complete event.
+curl -s -X POST "$BASE/v1/sprites/demo/checkpoint" -d '{"comment":"pre-run"}'
+# => {"event":"info","message":"creating checkpoint"}
+#    {"event":"complete","message":"checkpoint created","id":"v1"}
 
-# List the checkpoints (creation order).
+# List the checkpoints (creation order) as a bare array.
 curl -s "$BASE/v1/sprites/demo/checkpoints"
-# => {"checkpoints":[{"id":"v1","comment":"pre-run"}]}
+# => [{"id":"v1","comment":"pre-run","create_time":"2026-07-11T...Z","is_auto":false}]
 
-# Run a risky step that corrupts state and fails.
-curl -s -X POST "$BASE/v1/sprites/demo/exec" -d '{"cmd":"./risky.sh"}'
-# => {"stdout":"","stderr":"risky.sh: failed\n","exitCode":1}
-
-# Restore rewinds the filesystem to the checkpoint, addressed by id in the path.
+# Restore rewinds the filesystem to the checkpoint, addressed by id in the path,
+# streaming NDJSON progress.
 curl -s -X POST "$BASE/v1/sprites/demo/checkpoints/v1/restore"
-curl -s "$BASE/v1/sprites/demo"
-# => {"id":"demo","status":"running","url":"...","fs":{"/state":"good"},"checkpoints":[{"id":"v1","comment":"pre-run"}]}
+# => {"event":"info","message":"restoring checkpoint v1"}
+#    {"event":"complete","message":"checkpoint restored","id":"v1"}
 ```
+
+`exec` is a control WebSocket at `ws://<host>/v1/sprites/{id}/exec`. Pass the
+command as `cmd` query params (`?cmd=echo&cmd=hi`, or a single `?cmd=echo hi`).
+Every message is a binary frame `[streamID][payload]`: the server writes stdout
+as `[1]<bytes>`, stderr as `[2]<bytes>`, then `[3]<exitCodeByte>`. So
+`echo hi` yields `[1]"hi\n"` then `[3]\x00` (exit 0), and `./risky.sh` yields
+`[2]"risky.sh: failed\n"` then `[3]\x01` (exit 1).
 
 ## Comparison
 
@@ -104,9 +113,10 @@ curl -s "$BASE/v1/sprites/demo"
 
 ## API coverage
 
-Implemented: create, exec, checkpoint, list checkpoints, restore-by-id, destroy,
-and an inspection `GET`, plus a `/_spritzer/health` report. The full table is in the
-[API coverage docs](https://intentius.github.io/spritzer/api-coverage/).
+Implemented: create, the exec control WebSocket, checkpoint (NDJSON), list
+checkpoints (bare array), get one checkpoint, restore-by-id (NDJSON), destroy,
+and an inspection `GET`, plus a `/_spritzer/health` report. The full table is in
+the [API coverage docs](https://intentius.github.io/spritzer/api-coverage/).
 
 ## Development
 
