@@ -6,6 +6,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-11
+
+Aligns exec and checkpoints with the real Sprites API surface reverse-engineered
+from `superfly/sprites-go` (websocket.go, checkpoint.go). Exec is now a control
+WebSocket speaking the framed stream protocol, and checkpoint create/restore
+stream NDJSON progress.
+
+### Changed
+
+- `exec` is now a control WebSocket at `GET /v1/sprites/{name}/exec`, replacing
+  the JSON `POST` endpoint. The command is reconstructed from the query string
+  (`cmd` repeated per argv element, or a single `cmd` as the whole command line;
+  `path` is the argv[0] fallback). Every message is a binary frame
+  `[streamID][payload]`: StreamStdin=0, StreamStdout=1, StreamStderr=2,
+  StreamExit=3 (payload[0] is the exit code), StreamStdinEOF=4. The server writes
+  stdout as `[1]<bytes>`, stderr as `[2]<bytes>`, then `[3]<exitCodeByte>` and
+  closes, matching the real Sprites SDK's non-PTY framing. The handshake response
+  advertises `sprite-capabilities: control-ws`.
+- Checkpoint create moved to the singular `POST /v1/sprites/{name}/checkpoint`
+  and now streams line-delimited NDJSON progress events (`application/x-ndjson`):
+  an `info` event then a terminal `{"event":"complete","id":"v<N>"}` carrying the
+  server-assigned version id. The old plural create and its `{id}` JSON body are
+  removed.
+- `GET /v1/sprites/{name}/checkpoints` now returns a bare JSON array
+  `[{id, comment, create_time, is_auto}]` (creation order), not a
+  `{checkpoints: [...]}` wrapper. Each checkpoint gains a `create_time` timestamp
+  and an `is_auto` flag (false for manual checkpoints).
+- Restore (`POST /v1/sprites/{name}/checkpoints/{id}/restore`) now streams NDJSON
+  progress events; an unknown sprite or checkpoint id is still a `404` before the
+  stream starts.
+- `GET /v1/sprites/{name}`'s `checkpoints` projection carries the richer
+  `{id, comment, create_time, is_auto}` shape.
+- `/_spritzer/health`'s implemented-path list reflects the new surface (WS exec,
+  singular checkpoint create, individual checkpoint GET, checkpoints list, and
+  restore).
+
+### Added
+
+- `GET /v1/sprites/{name}/checkpoints/{id}` returns a single checkpoint's
+  metadata (`{id, comment, create_time, is_auto}`); an unknown id is a `404`.
+- `github.com/coder/websocket` as the WebSocket dependency for the control-exec
+  endpoint.
+
 ## [0.2.0] - 2026-07-11
 
 Corrects the checkpoint/restore surface to the confirmed real Sprites API. The
@@ -64,6 +107,7 @@ real API assigns the id and the caller controls only a comment.
 - Distroless container image, GoReleaser configuration, mkdocs-material doc site,
   and CI.
 
-[Unreleased]: https://github.com/intentius/spritzer/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/intentius/spritzer/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/intentius/spritzer/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/intentius/spritzer/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/intentius/spritzer/releases/tag/v0.1.0

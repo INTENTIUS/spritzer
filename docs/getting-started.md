@@ -41,15 +41,24 @@ BASE=http://localhost:4290
 # Create a sprite (its name is its id).
 curl -s -X POST "$BASE/v1/sprites" -d '{"name":"demo"}'
 
-# Seed state, checkpoint it (the server assigns id v1), then corrupt it and fail.
-curl -s -X POST "$BASE/v1/sprites/demo/exec" -d '{"cmd":"echo good > /state"}'
-curl -s -X POST "$BASE/v1/sprites/demo/checkpoints" -d '{"comment":"pre-run"}'
-curl -s -X POST "$BASE/v1/sprites/demo/exec" -d '{"cmd":"./risky.sh"}'
+# Checkpoint the current state; the server assigns id v1 and streams NDJSON
+# progress ending in {"event":"complete","id":"v1"}.
+curl -s -X POST "$BASE/v1/sprites/demo/checkpoint" -d '{"comment":"pre-run"}'
 
-# Restore rewinds the filesystem to the checkpoint, by id in the path.
+# List the checkpoints as a bare array.
+curl -s "$BASE/v1/sprites/demo/checkpoints" | jq
+
+# Restore rewinds the filesystem to the checkpoint, by id in the path (NDJSON).
 curl -s -X POST "$BASE/v1/sprites/demo/checkpoints/v1/restore"
 curl -s "$BASE/v1/sprites/demo" | jq '{id, status, fs, checkpoints}'
 ```
+
+`exec` is a control WebSocket, so it is not a plain `curl` call. Connect
+`ws://localhost:4290/v1/sprites/demo/exec?cmd=<command>` and read the binary
+`[streamID][payload]` frames — the server writes stdout as `[1]<bytes>`, stderr
+as `[2]<bytes>`, then a final `[3]<exitCodeByte>`. See the
+[API coverage](api-coverage.md#the-exec-control-websocket) for the frame
+protocol.
 
 ## Check what is implemented
 

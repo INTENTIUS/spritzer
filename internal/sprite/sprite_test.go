@@ -191,9 +191,53 @@ func TestCheckpointVersionIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list = %v", err)
 	}
-	want := []CheckpointInfo{{ID: "v1", Comment: "pre-run"}, {ID: "v2", Comment: ""}}
-	if !reflect.DeepEqual(cps, want) {
-		t.Fatalf("list = %v, want %v", cps, want)
+	// create_time is stamped from the clock and not compared here; the id,
+	// comment, and is_auto (default false) are the contract fields.
+	if len(cps) != 2 {
+		t.Fatalf("list len = %d, want 2", len(cps))
+	}
+	if cps[0].ID != "v1" || cps[0].Comment != "pre-run" || cps[0].IsAuto {
+		t.Fatalf("cps[0] = %+v, want {v1 pre-run is_auto:false}", cps[0])
+	}
+	if cps[1].ID != "v2" || cps[1].Comment != "" || cps[1].IsAuto {
+		t.Fatalf("cps[1] = %+v, want {v2 \"\" is_auto:false}", cps[1])
+	}
+}
+
+// TestCheckpointCreateTimeStamped confirms a checkpoint records a create_time
+// from the injected clock, and GetCheckpoint returns the same metadata.
+func TestCheckpointCreateTimeStamped(t *testing.T) {
+	at := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	st := New(clock.NewFake(at))
+	st.Create("s", "http://h/s/s", nil)
+	if _, err := st.Checkpoint("s", "pre-run"); err != nil {
+		t.Fatalf("checkpoint = %v", err)
+	}
+	info, err := st.GetCheckpoint("s", "v1")
+	if err != nil {
+		t.Fatalf("get checkpoint = %v", err)
+	}
+	want := CheckpointInfo{
+		ID:         "v1",
+		Comment:    "pre-run",
+		CreateTime: at.Format("2006-01-02T15:04:05.999999999Z07:00"),
+		IsAuto:     false,
+	}
+	if !reflect.DeepEqual(info, want) {
+		t.Fatalf("get checkpoint = %+v, want %+v", info, want)
+	}
+}
+
+// TestGetUnknownCheckpoint confirms GetCheckpoint reports ErrCheckpointNotFound
+// for an unknown id and ErrNotFound for a missing sprite.
+func TestGetUnknownCheckpoint(t *testing.T) {
+	st := New(nil)
+	st.Create("s", "http://h/s/s", nil)
+	if _, err := st.GetCheckpoint("s", "v99"); !errors.Is(err, ErrCheckpointNotFound) {
+		t.Fatalf("get unknown = %v, want ErrCheckpointNotFound", err)
+	}
+	if _, err := st.GetCheckpoint("ghost", "v1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("get on missing sprite = %v, want ErrNotFound", err)
 	}
 }
 

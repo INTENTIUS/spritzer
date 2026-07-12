@@ -2,15 +2,20 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+
 	"github.com/intentius/spritzer/internal/clock"
+	"github.com/intentius/spritzer/internal/sprite"
 )
 
 type harness struct {
@@ -57,6 +62,93 @@ func (h *harness) mustJSON(raw []byte, dst any) {
 	}
 }
 
+// checkpointID posts to the singular /checkpoint endpoint, scans the NDJSON
+// progress stream, and returns the id from the terminal complete event.
+func (h *harness) checkpointID(name, comment string) string {
+	h.t.Helper()
+	body := map[string]any{}
+	if comment != "" {
+		body["comment"] = comment
+	}
+	code, raw := h.do(http.MethodPost, "/v1/sprites/"+name+"/checkpoint", body)
+	if code != http.StatusOK {
+		h.t.Fatalf("checkpoint = %d %s, want 200", code, raw)
+	}
+	return completeID(h.t, raw)
+}
+
+// completeID scans an NDJSON progress body and returns the id carried by the
+// terminal {"event":"complete"} line.
+func completeID(t *testing.T, raw []byte) string {
+	t.Helper()
+	var id string
+	sawComplete := false
+	for _, line := range bytes.Split(bytes.TrimSpace(raw), []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var ev progressEvent
+		if err := json.Unmarshal(line, &ev); err != nil {
+			t.Fatalf("ndjson line %q: %v", line, err)
+		}
+		if ev.Event == "complete" {
+			id = ev.ID
+			sawComplete = true
+		}
+	}
+	if !sawComplete {
+		t.Fatalf("ndjson stream had no complete event: %s", raw)
+	}
+	return id
+}
+
+// execWS connects the control WebSocket, sends the command as a single cmd
+// query param, reads the framed stdout/stderr/exit, and returns them. It fails
+// the test if no exit frame arrives.
+func (h *harness) execWS(name, cmd string) (stdout, stderr string, exit int) {
+	h.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	q := url.Values{"cmd": {cmd}, "stdin": {"false"}}
+	wsURL := "ws" + strings.TrimPrefix(h.ts.URL, "http") + "/v1/sprites/" + name + "/exec?" + q.Encode()
+
+	c, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		h.t.Fatalf("ws dial %s: %v", name, err)
+	}
+	defer func() { _ = c.CloseNow() }()
+
+	sawExit := false
+	for {
+		typ, data, err := c.Read(ctx)
+		if err != nil {
+			break
+		}
+		if typ != websocket.MessageBinary || len(data) == 0 {
+			continue
+		}
+		switch data[0] {
+		case streamStdout:
+			stdout += string(data[1:])
+		case streamStderr:
+			stderr += string(data[1:])
+		case streamExit:
+			if len(data) >= 2 {
+				exit = int(data[1])
+			}
+			sawExit = true
+		}
+		if sawExit {
+			break
+		}
+	}
+	if !sawExit {
+		h.t.Fatalf("exec ws %q: no exit frame", cmd)
+	}
+	return stdout, stderr, exit
+}
+
 func TestHealth(t *testing.T) {
 	h := newHarness(t)
 	code, body := h.do(http.MethodGet, "/_spritzer/health", nil)
@@ -74,6 +166,15 @@ func TestHealth(t *testing.T) {
 	}
 	if len(payload.Implemented) == 0 {
 		t.Fatalf("expected non-empty coverage list: %+v", payload)
+	}
+	// The exec entry names the control WebSocket, and checkpoint create is the
+	// singular path.
+	joined := strings.Join(payload.Implemented, "\n")
+	if !strings.Contains(joined, "exec (control WebSocket)") {
+		t.Fatalf("coverage list missing WS exec entry: %v", payload.Implemented)
+	}
+	if !strings.Contains(joined, "POST /v1/sprites/{id}/checkpoint\n") && !strings.HasSuffix(joined, "POST /v1/sprites/{id}/checkpoint") {
+		t.Fatalf("coverage list missing singular checkpoint create: %v", payload.Implemented)
 	}
 }
 
@@ -107,8 +208,9 @@ func TestCreateResponseShape(t *testing.T) {
 	}
 }
 
-// TestFullLoop exercises every endpoint: create, exec write, checkpoint, exec
-// corrupt, GET (corrupt), restore, GET (rewound), destroy, then 404s.
+// TestFullLoop exercises the whole surface: create, WS exec write, checkpoint
+// (NDJSON), WS exec corrupt, GET (corrupt), restore (NDJSON), GET (rewound),
+// destroy, then 404s.
 func TestFullLoop(t *testing.T) {
 	h := newHarness(t)
 
@@ -117,53 +219,45 @@ func TestFullLoop(t *testing.T) {
 		t.Fatalf("create = %d %s", code, body)
 	}
 
-	// exec: write a key
-	code, body := h.do(http.MethodPost, "/v1/sprites/s1/exec", map[string]any{"cmd": "echo good > /state"})
-	if code != http.StatusOK {
-		t.Fatalf("exec write = %d %s", code, body)
-	}
-	var ex struct {
-		Stdout   string `json:"stdout"`
-		Stderr   string `json:"stderr"`
-		ExitCode int    `json:"exitCode"`
-	}
-	h.mustJSON(body, &ex)
-	if ex.ExitCode != 0 {
-		t.Fatalf("exec write exitCode = %d, want 0", ex.ExitCode)
+	// exec over the control WebSocket: write a key, exit frame 0.
+	if stdout, stderr, exit := h.execWS("s1", "echo good > /state"); exit != 0 || stdout != "" || stderr != "" {
+		t.Fatalf("exec write = out=%q err=%q exit=%d, want exit 0", stdout, stderr, exit)
 	}
 
-	// checkpoint: the server assigns the version id v1; the caller supplies a
-	// comment.
-	code, body = h.do(http.MethodPost, "/v1/sprites/s1/checkpoints", map[string]any{"comment": "pre-run"})
-	if code != http.StatusCreated {
-		t.Fatalf("checkpoint = %d %s", code, body)
-	}
-	var cp checkpointResponse
-	h.mustJSON(body, &cp)
-	if cp.ID != "v1" {
-		t.Fatalf("checkpoint id = %q, want v1", cp.ID)
+	// checkpoint: the server assigns v1; the caller supplies a comment.
+	if id := h.checkpointID("s1", "pre-run"); id != "v1" {
+		t.Fatalf("checkpoint id = %q, want v1", id)
 	}
 
-	// list checkpoints reports v1 with its comment
-	code, body = h.do(http.MethodGet, "/v1/sprites/s1/checkpoints", nil)
+	// list checkpoints is a bare array with is_auto false and a create_time.
+	code, body := h.do(http.MethodGet, "/v1/sprites/s1/checkpoints", nil)
 	if code != http.StatusOK {
 		t.Fatalf("list checkpoints = %d %s", code, body)
 	}
-	var list listCheckpointsResponse
+	var list []sprite.CheckpointInfo
 	h.mustJSON(body, &list)
-	if len(list.Checkpoints) != 1 || list.Checkpoints[0].ID != "v1" || list.Checkpoints[0].Comment != "pre-run" {
-		t.Fatalf("list = %+v, want [{v1 pre-run}]", list.Checkpoints)
+	if len(list) != 1 || list[0].ID != "v1" || list[0].Comment != "pre-run" || list[0].IsAuto {
+		t.Fatalf("list = %+v, want [{v1 pre-run is_auto:false}]", list)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(string(body)), "[") {
+		t.Fatalf("list body = %s, want a bare JSON array", body)
 	}
 
-	// exec: corrupt via risky.sh (exit 1) — the server still returns 200 with
-	// the exec result; a non-zero exit is the client's concern.
-	code, body = h.do(http.MethodPost, "/v1/sprites/s1/exec", map[string]any{"cmd": "echo bad > /state; ./risky.sh"})
+	// get a single checkpoint
+	code, body = h.do(http.MethodGet, "/v1/sprites/s1/checkpoints/v1", nil)
 	if code != http.StatusOK {
-		t.Fatalf("exec corrupt = %d %s", code, body)
+		t.Fatalf("get checkpoint = %d %s", code, body)
 	}
-	h.mustJSON(body, &ex)
-	if ex.ExitCode != 1 || ex.Stderr != "risky.sh: failed\n" {
-		t.Fatalf("exec corrupt = %+v, want exit 1 + stderr", ex)
+	var one sprite.CheckpointInfo
+	h.mustJSON(body, &one)
+	if one.ID != "v1" || one.Comment != "pre-run" || one.IsAuto {
+		t.Fatalf("get checkpoint = %+v, want {v1 pre-run is_auto:false}", one)
+	}
+
+	// exec: corrupt via risky.sh (stderr + exit frame 1).
+	stdout, stderr, exit := h.execWS("s1", "echo bad > /state; ./risky.sh")
+	if exit != 1 || stderr != "risky.sh: failed\n" || stdout != "" {
+		t.Fatalf("exec corrupt = out=%q err=%q exit=%d, want exit 1 + stderr", stdout, stderr, exit)
 	}
 
 	// GET shows corruption
@@ -172,14 +266,11 @@ func TestFullLoop(t *testing.T) {
 		t.Fatalf("get corrupt = %d %s", code, body)
 	}
 	var view struct {
-		ID          string            `json:"id"`
-		Status      string            `json:"status"`
-		URL         string            `json:"url"`
-		FS          map[string]string `json:"fs"`
-		Checkpoints []struct {
-			ID      string `json:"id"`
-			Comment string `json:"comment"`
-		} `json:"checkpoints"`
+		ID          string                  `json:"id"`
+		Status      string                  `json:"status"`
+		URL         string                  `json:"url"`
+		FS          map[string]string       `json:"fs"`
+		Checkpoints []sprite.CheckpointInfo `json:"checkpoints"`
 	}
 	h.mustJSON(body, &view)
 	if view.FS["/state"] != "bad" || view.FS["/work/output"] != "partial-corrupt" {
@@ -189,13 +280,16 @@ func TestFullLoop(t *testing.T) {
 		t.Fatalf("checkpoints = %+v, want [{v1 pre-run}]", view.Checkpoints)
 	}
 
-	// restore by id in the path
-	if code, body := h.do(http.MethodPost, "/v1/sprites/s1/checkpoints/v1/restore", nil); code != http.StatusOK {
+	// restore by id in the path: consume the NDJSON stream and confirm it names v1.
+	code, body = h.do(http.MethodPost, "/v1/sprites/s1/checkpoints/v1/restore", nil)
+	if code != http.StatusOK {
 		t.Fatalf("restore = %d %s", code, body)
 	}
+	if id := completeID(t, body); id != "v1" {
+		t.Fatalf("restore complete id = %q, want v1", id)
+	}
 
-	// GET shows rewound. Use a fresh struct: unmarshaling into the populated
-	// `view` above would merge maps and not clear /work/output.
+	// GET shows rewound. Use a fresh struct so maps do not merge.
 	var rewound struct {
 		Status string            `json:"status"`
 		FS     map[string]string `json:"fs"`
@@ -218,34 +312,126 @@ func TestFullLoop(t *testing.T) {
 	if code, _ := h.do(http.MethodGet, "/v1/sprites/s1", nil); code != http.StatusNotFound {
 		t.Fatalf("get after destroy = %d, want 404", code)
 	}
-	if code, _ := h.do(http.MethodPost, "/v1/sprites/s1/exec", map[string]any{"cmd": "true"}); code != http.StatusNotFound {
-		t.Fatalf("exec after destroy = %d, want 404", code)
+	if code, _ := h.do(http.MethodPost, "/v1/sprites/s1/checkpoint", map[string]any{}); code != http.StatusNotFound {
+		t.Fatalf("checkpoint after destroy = %d, want 404", code)
 	}
 	if code, _ := h.do(http.MethodDelete, "/v1/sprites/s1", nil); code != http.StatusNotFound {
 		t.Fatalf("destroy after destroy = %d, want 404", code)
 	}
 }
 
+// TestExecWSFrames asserts the framing directly: echo writes fs and exits 0;
+// risky.sh yields a stderr frame and exit 1.
+func TestExecWSFrames(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "ws"}); code != http.StatusCreated {
+		t.Fatalf("create = %d %s", code, body)
+	}
+
+	// echo hi (no redirect) -> stdout "hi\n", exit 0.
+	if stdout, stderr, exit := h.execWS("ws", "echo hi"); stdout != "hi\n" || stderr != "" || exit != 0 {
+		t.Fatalf("echo hi = out=%q err=%q exit=%d, want out=\"hi\\n\" exit 0", stdout, stderr, exit)
+	}
+
+	// echo hi > /state writes the fs and exits 0.
+	if _, _, exit := h.execWS("ws", "echo hi > /state"); exit != 0 {
+		t.Fatalf("echo redirect exit = %d, want 0", exit)
+	}
+	_, body := h.do(http.MethodGet, "/v1/sprites/ws", nil)
+	var view struct {
+		FS map[string]string `json:"fs"`
+	}
+	h.mustJSON(body, &view)
+	if view.FS["/state"] != "hi" {
+		t.Fatalf("fs after ws write = %v, want {/state: hi}", view.FS)
+	}
+
+	// risky.sh -> stderr frame + exit 1.
+	if stdout, stderr, exit := h.execWS("ws", "./risky.sh"); exit != 1 || stderr != "risky.sh: failed\n" || stdout != "" {
+		t.Fatalf("risky = out=%q err=%q exit=%d, want stderr + exit 1", stdout, stderr, exit)
+	}
+}
+
+// TestExecWSArgvParams confirms repeated cmd params are joined into the command
+// line (argv form), equivalent to a single cmd param.
+func TestExecWSArgvParams(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "argv"}); code != http.StatusCreated {
+		t.Fatalf("create = %d %s", code, body)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// Send `echo` `hi` as separate argv elements plus path=echo.
+	q := url.Values{"cmd": {"echo", "hi"}, "path": {"echo"}, "stdin": {"false"}}
+	wsURL := "ws" + strings.TrimPrefix(h.ts.URL, "http") + "/v1/sprites/argv/exec?" + q.Encode()
+	c, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.CloseNow() }()
+	var stdout string
+	var exit int
+	sawExit := false
+	for !sawExit {
+		typ, data, err := c.Read(ctx)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if typ != websocket.MessageBinary || len(data) == 0 {
+			continue
+		}
+		switch data[0] {
+		case streamStdout:
+			stdout += string(data[1:])
+		case streamExit:
+			if len(data) >= 2 {
+				exit = int(data[1])
+			}
+			sawExit = true
+		}
+	}
+	if stdout != "hi\n" || exit != 0 {
+		t.Fatalf("argv exec = out=%q exit=%d, want out=\"hi\\n\" exit 0", stdout, exit)
+	}
+}
+
+// TestExecWSMissingSprite confirms the WS closes with a policy-violation status
+// for an unknown sprite.
+func TestExecWSMissingSprite(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	q := url.Values{"cmd": {"true"}, "stdin": {"false"}}
+	wsURL := "ws" + strings.TrimPrefix(h.ts.URL, "http") + "/v1/sprites/ghost/exec?" + q.Encode()
+	c, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.CloseNow() }()
+	// A read should fail with a close status carrying the policy violation.
+	_, _, readErr := c.Read(ctx)
+	if readErr == nil {
+		t.Fatalf("expected close for missing sprite, got a frame")
+	}
+	if status := websocket.CloseStatus(readErr); status != websocket.StatusPolicyViolation {
+		t.Fatalf("close status = %v, want policy violation", status)
+	}
+}
+
 // TestCheckpointVersionIDOverHTTP confirms the server assigns v1 for the first
-// checkpoint even when the body carries no comment.
+// checkpoint even when the body carries no comment, via the NDJSON stream.
 func TestCheckpointVersionIDOverHTTP(t *testing.T) {
 	h := newHarness(t)
 	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "s"}); code != http.StatusCreated {
 		t.Fatalf("create = %d %s", code, body)
 	}
-	code, body := h.do(http.MethodPost, "/v1/sprites/s/checkpoints", map[string]any{})
-	if code != http.StatusCreated {
-		t.Fatalf("checkpoint = %d %s", code, body)
-	}
-	var cp checkpointResponse
-	h.mustJSON(body, &cp)
-	if cp.ID != "v1" {
-		t.Fatalf("checkpoint id = %q, want v1", cp.ID)
+	if id := h.checkpointID("s", ""); id != "v1" {
+		t.Fatalf("checkpoint id = %q, want v1", id)
 	}
 }
 
 // TestListCheckpointsEmpty confirms a sprite with no checkpoints lists as an
-// empty array, not null.
+// empty bare array, not null and not a wrapper object.
 func TestListCheckpointsEmpty(t *testing.T) {
 	h := newHarness(t)
 	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "s"}); code != http.StatusCreated {
@@ -255,12 +441,13 @@ func TestListCheckpointsEmpty(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("list = %d %s", code, body)
 	}
-	if s := string(body); !strings.Contains(s, `"checkpoints":[]`) {
-		t.Fatalf("empty list body = %s, want checkpoints:[]", s)
+	if s := strings.TrimSpace(string(body)); s != "[]" {
+		t.Fatalf("empty list body = %s, want []", s)
 	}
 }
 
-// TestRestoreUnknownCheckpoint404 confirms an unknown id in the path is a 404.
+// TestRestoreUnknownCheckpoint404 confirms an unknown id in the path is a 404
+// (JSON error, not an NDJSON stream).
 func TestRestoreUnknownCheckpoint404(t *testing.T) {
 	h := newHarness(t)
 	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "s"}); code != http.StatusCreated {
@@ -277,7 +464,19 @@ func TestRestoreUnknownCheckpoint404(t *testing.T) {
 	}
 }
 
-// TestOpsOnMissingSprite confirms a missing sprite is 404 on exec/get/destroy.
+// TestGetUnknownCheckpoint404 confirms GET of an unknown checkpoint id is a 404.
+func TestGetUnknownCheckpoint404(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "s"}); code != http.StatusCreated {
+		t.Fatalf("create = %d %s", code, body)
+	}
+	code, body := h.do(http.MethodGet, "/v1/sprites/s/checkpoints/v99", nil)
+	if code != http.StatusNotFound {
+		t.Fatalf("get unknown checkpoint = %d %s, want 404", code, body)
+	}
+}
+
+// TestOpsOnMissingSprite confirms a missing sprite is 404 on the HTTP ops.
 func TestOpsOnMissingSprite(t *testing.T) {
 	h := newHarness(t)
 	for _, tc := range []struct {
@@ -285,9 +484,9 @@ func TestOpsOnMissingSprite(t *testing.T) {
 		body         any
 	}{
 		{http.MethodGet, "/v1/sprites/ghost", nil},
-		{http.MethodPost, "/v1/sprites/ghost/exec", map[string]any{"cmd": "true"}},
-		{http.MethodPost, "/v1/sprites/ghost/checkpoints", map[string]any{}},
+		{http.MethodPost, "/v1/sprites/ghost/checkpoint", map[string]any{}},
 		{http.MethodGet, "/v1/sprites/ghost/checkpoints", nil},
+		{http.MethodGet, "/v1/sprites/ghost/checkpoints/v1", nil},
 		{http.MethodPost, "/v1/sprites/ghost/checkpoints/v1/restore", nil},
 		{http.MethodDelete, "/v1/sprites/ghost", nil},
 	} {
