@@ -2,6 +2,8 @@
 
 A standalone, stateful local emulator of the Fly.io Sprites API. Like LocalStack, but for Fly Sprites.
 
+spritzer is the local target for [chant](https://intentius.io/chant)'s Fly lexicon — its Sprite activities (create, exec, checkpoint, restore) run against spritzer for offline, accountless checkpoint-as-compensation. See the [chant docs](https://intentius.io/chant) and the [Fly deploy tutorial](https://intentius.io/chant/tutorials/fly-deploy-rollback/) it powers.
+
 [![CI](https://github.com/intentius/spritzer/actions/workflows/ci.yml/badge.svg)](https://github.com/intentius/spritzer/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/intentius/spritzer.svg)](https://pkg.go.dev/github.com/intentius/spritzer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
