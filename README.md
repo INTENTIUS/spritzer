@@ -90,8 +90,8 @@ curl -s "$BASE/v1/sprites/demo/checkpoints"
 # Restore rewinds the filesystem to the checkpoint, addressed by id in the path,
 # streaming NDJSON progress.
 curl -s -X POST "$BASE/v1/sprites/demo/checkpoints/v1/restore"
-# => {"event":"info","message":"restoring checkpoint v1"}
-#    {"event":"complete","message":"checkpoint restored","id":"v1"}
+# => {"type":"info","data":"Restoring checkpoint v1..."}
+#    {"type":"complete","data":"Checkpoint v1 restored successfully"}
 ```
 
 `exec` is a control WebSocket at `ws://<host>/v1/sprites/{id}/exec`. Pass the
