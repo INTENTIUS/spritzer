@@ -42,7 +42,7 @@ BASE=http://localhost:4290
 curl -s -X POST "$BASE/v1/sprites" -d '{"name":"demo"}'
 
 # Checkpoint the current state; the server assigns id v1 and streams NDJSON
-# progress ending in {"event":"complete","id":"v1"}.
+# progress ending in {"type":"complete","data":"Checkpoint v1 created successfully"}.
 curl -s -X POST "$BASE/v1/sprites/demo/checkpoint" -d '{"comment":"pre-run"}'
 
 # List the checkpoints as a bare array.

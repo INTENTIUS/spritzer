@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-12
+
+### Changed
+
+- Checkpoint create/restore NDJSON now matches the real Sprites API line shape:
+  each event is `{"type","data","time"}` with the version id carried in the
+  message text (`  ID: v1`, `Checkpoint v1 created successfully`) rather than a
+  structured `id` field. Verified against `api.sprites.dev`. Clients that mined
+  the id from a structured field must read it from the message text (the chant
+  temporal lexicon's `parseCheckpointNdjson` does).
+
 ## [0.3.0] - 2026-07-11
 
 Aligns exec and checkpoints with the real Sprites API surface reverse-engineered

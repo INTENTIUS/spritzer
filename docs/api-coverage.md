@@ -11,7 +11,7 @@ clear JSON error.
 | --- | --- | --- |
 | POST | `/v1/sprites` | Create a sprite; `name` is required and becomes the id. Returns `{id, url}`. |
 | GET (WS) | `/v1/sprites/{id}/exec` | Control WebSocket. Reconstructs the command from the query string and streams framed `[streamID][payload]` messages. See [the exec control WebSocket](#the-exec-control-websocket). |
-| POST | `/v1/sprites/{id}/checkpoint` | Deep-copy the filesystem under a server-assigned version id (`v1`, `v2`, …). Body is `{comment?}`; streams NDJSON progress ending in `{"event":"complete","id":"v<N>"}`. |
+| POST | `/v1/sprites/{id}/checkpoint` | Deep-copy the filesystem under a server-assigned version id (`v1`, `v2`, …). Body is `{comment?}`; streams NDJSON progress ending in `{"type":"complete","data":"Checkpoint v<N> created successfully"}`. |
 | GET | `/v1/sprites/{id}/checkpoints` | List the checkpoints in creation order as a bare JSON array `[{id, comment, create_time, is_auto}]`. |
 | GET | `/v1/sprites/{id}/checkpoints/{cid}` | A single checkpoint's metadata: `{id, comment, create_time, is_auto}`; `404` if the id is unknown. |
 | POST | `/v1/sprites/{id}/checkpoints/{cid}/restore` | Replace the filesystem with checkpoint `{cid}` and return the sprite to `running`; streams NDJSON progress. `404` if the id is unknown. |
@@ -26,8 +26,10 @@ in creation order per sprite, stamping a `create_time` and an `is_auto` flag
 `comment` as a stable handle — list the checkpoints and restore the newest one
 whose comment matches — while restore itself always takes an explicit id in the
 path. Create and restore reply with streaming NDJSON progress
-(`application/x-ndjson`): one or more `{"event":"info",...}` lines then a
-terminal `{"event":"complete","id":"v<N>"}`.
+(`application/x-ndjson`): one or more `{"type":"info","data":...}` lines then a
+terminal `{"type":"complete","data":...}`. Mirroring real Sprites, the version
+id is carried in the message text (`  ID: v<N>`, `Checkpoint v<N> created
+successfully`) rather than a structured field.
 
 ## The exec control WebSocket
 
