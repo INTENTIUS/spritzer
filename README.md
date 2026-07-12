@@ -79,8 +79,9 @@ curl -s -X POST "$BASE/v1/sprites" -d '{"name":"demo"}'
 # Checkpoint the current state. The server assigns the version id and streams
 # NDJSON progress; the id is on the terminal complete event.
 curl -s -X POST "$BASE/v1/sprites/demo/checkpoint" -d '{"comment":"pre-run"}'
-# => {"event":"info","message":"creating checkpoint"}
-#    {"event":"complete","message":"checkpoint created","id":"v1"}
+# => {"type":"info","data":"Creating checkpoint..."}
+#    {"type":"info","data":"  ID: v1"}
+#    {"type":"complete","data":"Checkpoint v1 created successfully"}
 
 # List the checkpoints (creation order) as a bare array.
 curl -s "$BASE/v1/sprites/demo/checkpoints"

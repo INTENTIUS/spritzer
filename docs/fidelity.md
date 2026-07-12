@@ -36,7 +36,10 @@ behind it is a deliberate limitation (a scripted interpreter, not a sandbox).
 ## Checkpoint and restore
 
 Create is `POST /v1/sprites/{id}/checkpoint` (singular) and streams NDJSON
-progress, ending in `{"event":"complete","id":"v<N>"}`. A checkpoint deep-copies
+progress as `{"type","data","time"}` lines, ending in a
+`{"type":"complete","data":"Checkpoint v<N> created successfully"}` — the
+version id rides in the message text (`  ID: v<N>`), not a structured field,
+matching real Sprites. A checkpoint deep-copies
 the filesystem under a server-assigned version id (`v1`, `v2`, …, one past the
 current count), stamping a `create_time` and an `is_auto` flag (false for manual
 checkpoints); the caller supplies only an optional comment. A restore addresses a
