@@ -30,6 +30,11 @@ var implementedPaths = []string{
 	"GET /_spritzer/health",
 }
 
+// init appends the config/runtime endpoints (#855) to the coverage list.
+func init() {
+	implementedPaths = append(implementedPaths, configPaths...)
+}
+
 // Options configures a Server.
 type Options struct {
 	Version string
@@ -81,6 +86,9 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /v1/sprites/{id}/checkpoints/{cid}/restore", s.restoreCheckpoint)
 	mux.HandleFunc("DELETE /v1/sprites/{id}", s.destroySprite)
 	mux.HandleFunc("GET /v1/sprites/{id}", s.getSprite)
+
+	// Filesystem, network policy, services, and keep-alive tasks (#855).
+	s.configRoutes(mux)
 
 	mux.HandleFunc("GET /_spritzer/health", s.health)
 

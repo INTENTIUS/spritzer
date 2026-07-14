@@ -75,6 +75,13 @@ type Sprite struct {
 	FS          map[string]string
 	Checkpoints []Checkpoint
 	Policy      any
+	// NetPolicy is the outbound network policy (whole-object replace).
+	NetPolicy []NetworkRule
+	// Services are background services keyed by name (create-or-update).
+	Services map[string]*Service
+	// Tasks are keep-alive holds keyed by name; while any exists the sprite
+	// stays active.
+	Tasks map[string]Task
 	// CreatedAt is stamped from the injected clock at creation. It is internal
 	// bookkeeping and is not part of the wire contract.
 	CreatedAt string
@@ -94,11 +101,14 @@ type ExecResult struct {
 // checkpoints are exposed as an ordered list of {id, comment} projections, not
 // their fs copies.
 type View struct {
-	ID          string            `json:"id"`
-	Status      Status            `json:"status"`
-	URL         string            `json:"url"`
-	FS          map[string]string `json:"fs"`
-	Checkpoints []CheckpointInfo  `json:"checkpoints"`
+	ID          string             `json:"id"`
+	Status      Status             `json:"status"`
+	URL         string             `json:"url"`
+	FS          map[string]string  `json:"fs"`
+	Checkpoints []CheckpointInfo   `json:"checkpoints"`
+	NetPolicy   []NetworkRule      `json:"netPolicy"`
+	Services    map[string]Service `json:"services"`
+	Tasks       map[string]Task    `json:"tasks"`
 }
 
 // Store holds sprites keyed by id.
@@ -129,6 +139,9 @@ func (s *Store) Create(id, url string, policy any) Sprite {
 		FS:          map[string]string{},
 		Checkpoints: nil,
 		Policy:      policy,
+		NetPolicy:   nil,
+		Services:    map[string]*Service{},
+		Tasks:       map[string]Task{},
 		CreatedAt:   s.clk.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00"),
 	}
 	s.sprites[id] = sp
@@ -244,12 +257,23 @@ func (s *Store) Get(id string) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
+	services := make(map[string]Service, len(sp.Services))
+	for name, svc := range sp.Services {
+		services[name] = *svc
+	}
+	tasks := make(map[string]Task, len(sp.Tasks))
+	for name, t := range sp.Tasks {
+		tasks[name] = t
+	}
 	return View{
 		ID:          sp.ID,
 		Status:      sp.Status,
 		URL:         sp.URL,
 		FS:          cloneFS(sp.FS),
 		Checkpoints: checkpointInfos(sp.Checkpoints),
+		NetPolicy:   cloneRules(sp.NetPolicy),
+		Services:    services,
+		Tasks:       tasks,
 	}, nil
 }
 
@@ -295,6 +319,16 @@ func cloneSprite(sp *Sprite) *Sprite {
 			cps[i].FS = cloneFS(cp.FS)
 		}
 		c.Checkpoints = cps
+	}
+	c.NetPolicy = cloneRules(sp.NetPolicy)
+	c.Services = make(map[string]*Service, len(sp.Services))
+	for name, svc := range sp.Services {
+		s := *svc
+		c.Services[name] = &s
+	}
+	c.Tasks = make(map[string]Task, len(sp.Tasks))
+	for name, t := range sp.Tasks {
+		c.Tasks[name] = t
 	}
 	return &c
 }
