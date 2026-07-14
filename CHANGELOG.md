@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Filesystem API: `PUT/GET/GET/DELETE /v1/sprites/{id}/fs/{write,read,list,delete}`.
+  read/write move raw bytes; list returns immediate children; delete supports
+  `recursive`.
+- Network policy: `GET/POST /v1/sprites/{id}/policy/network` (whole-object
+  replace of the outbound ruleset).
+- Background services: `GET /v1/sprites/{id}/services`,
+  `GET/PUT /v1/sprites/{id}/services/{svc}`, and
+  `POST /v1/sprites/{id}/services/{svc}/{start,stop,restart}` (NDJSON). PUT is
+  create-or-update by name; start/stop/restart flip the live state.
+- Keep-alive tasks: `GET/POST /v1/sprites/{id}/tasks` and
+  `PUT/DELETE /v1/sprites/{id}/tasks/{name}`.
+- `GET /v1/sprites/{id}` now also reports `netPolicy`, `services`, and `tasks`.
+
+These keep spritzer wire-compatible with chant's in-process Sprites fake, which
+grew the same surfaces for the fly lexicon's filesystem / config-reconcile /
+keep-alive activities (chant #847/#848/#849, tracked by chant #855).
+
 ## [0.3.1] - 2026-07-12
 
 ### Changed
