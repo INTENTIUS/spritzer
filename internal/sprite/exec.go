@@ -8,6 +8,7 @@ import (
 // The recognized command forms. These mirror the interpreter in chant's
 // sprites-fake.ts (fakeExec) exactly, so a client cannot tell the two apart.
 var (
+	reCatRedirect  = regexp.MustCompile(`^cat\s+(\S+)\s*>\s*(\S+)$`)
 	reEchoRedirect = regexp.MustCompile(`^echo\s+(.+?)\s*>\s*(\S+)$`)
 	reEcho         = regexp.MustCompile(`^echo\s+(.+)$`)
 	reCat          = regexp.MustCompile(`^cat\s+(\S+)$`)
@@ -30,6 +31,12 @@ func execInto(sp *Sprite, cmd string) ExecResult {
 		}
 
 		switch {
+		case reCatRedirect.MatchString(seg):
+			// Copy a file: `cat SRC > DEST`. Lets an Op stage input with a
+			// filesystem write, process it with exec, then read the result.
+			m := reCatRedirect.FindStringSubmatch(seg)
+			sp.FS[m[2]] = sp.FS[m[1]] // missing src -> empty string
+			exitCode = 0
 		case reEchoRedirect.MatchString(seg):
 			m := reEchoRedirect.FindStringSubmatch(seg)
 			sp.FS[m[2]] = unquote(m[1])

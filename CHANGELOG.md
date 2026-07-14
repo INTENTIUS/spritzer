@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-14
+
+### Fixed
+
+- `exec` now recognizes the `cat SRC > DEST` copy form, matching chant's
+  in-process fake (`sprites-fake.ts`). Without it, an Op that staged a file, ran
+  `cat /src > /out` to process it, then read `/out` worked against the fake but
+  failed against spritzer (`/out` was never written) — INTENTIUS/spritzer#13.
+
 ## [0.4.0] - 2026-07-14
 
 ### Added
@@ -139,7 +148,8 @@ real API assigns the id and the caller controls only a comment.
 - Distroless container image, GoReleaser configuration, mkdocs-material doc site,
   and CI.
 
-[Unreleased]: https://github.com/intentius/spritzer/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/intentius/spritzer/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/intentius/spritzer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/intentius/spritzer/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/intentius/spritzer/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/intentius/spritzer/compare/v0.2.0...v0.3.0

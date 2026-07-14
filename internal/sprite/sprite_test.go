@@ -57,6 +57,13 @@ func TestExecInterpreter(t *testing.T) {
 			exitCode: 0,
 		},
 		{
+			name:     "cat redirect copies src to dest",
+			startFS:  map[string]string{"/src": "hello"},
+			cmd:      "cat /src > /out",
+			wantFS:   map[string]string{"/src": "hello", "/out": "hello"},
+			exitCode: 0,
+		},
+		{
 			name:     "rm deletes fs key",
 			startFS:  map[string]string{"/state": "good"},
 			cmd:      "rm /state",
