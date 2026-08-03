@@ -20,7 +20,7 @@ import (
 // implementedPaths backs the health/coverage endpoint.
 var implementedPaths = []string{
 	"POST /v1/sprites",
-	"GET /v1/sprites/{id}/exec (control WebSocket)",
+	"GET /v1/sprites/{id}/exec (control WebSocket; session list when not upgraded)",
 	"POST /v1/sprites/{id}/checkpoint",
 	"GET /v1/sprites/{id}/checkpoints",
 	"GET /v1/sprites/{id}/checkpoints/{cid}",
