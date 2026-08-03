@@ -31,6 +31,21 @@ const (
 // [streamExit]<codeByte> and closes.
 func (s *Server) execSpriteWS(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
+	// The same path serves two protocols, which is the real API's shape rather
+	// than a convenience: upgraded, it is the control WebSocket below; plain, it
+	// is the session list. sprites-ex's Session.list_by_name/2 does exactly
+	// `Req.get("/v1/sprites/#{name}/exec")` and reads body["sessions"].
+	//
+	// Without this, a plain GET fell through to websocket.Accept and came back
+	// 426, which is what orphaned every fountain turn — the client asks for the
+	// session list before it decides whether to reattach or start fresh, so the
+	// turn died before anything ran. See INTENTIUS/spritzer#18.
+	if !isWebSocketUpgrade(r) {
+		s.listExecSessions(w, r)
+		return
+	}
+
 	cmd := reconstructCmd(r)
 
 	// Advertise the control-WebSocket capability on the 101 response so a client
@@ -123,4 +138,40 @@ func writeFrame(ctx context.Context, c *websocket.Conn, streamID byte, payload [
 	frame = append(frame, streamID)
 	frame = append(frame, payload...)
 	return c.Write(ctx, websocket.MessageBinary, frame)
+}
+
+// isWebSocketUpgrade reports whether the request is asking to upgrade.
+//
+// Both headers are lists and both are case-insensitive, so this cannot be an
+// equality check: Connection is commonly "keep-alive, Upgrade" from a proxy.
+func isWebSocketUpgrade(r *http.Request) bool {
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return false
+	}
+	for _, part := range strings.Split(r.Header.Get("Connection"), ",") {
+		if strings.EqualFold(strings.TrimSpace(part), "upgrade") {
+			return true
+		}
+	}
+	return false
+}
+
+// listExecSessions answers a plain GET on the exec path with the sprite's
+// current exec sessions.
+//
+// spritzer runs each exec for the life of one WebSocket and keeps nothing
+// afterwards, so a sprite that is not mid-exec has no sessions and the honest
+// answer is an empty list. That is also the answer that lets a client get on
+// with it: no active session means nothing to reattach to, so it starts a fresh
+// turn instead of waiting for one that will never appear.
+//
+// A missing sprite is still a 404 here, the same as every other operation on
+// one, rather than an empty list — "no sessions" and "no sprite" are different
+// answers and a client reattaching should be able to tell them apart.
+func (s *Server) listExecSessions(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := s.store.Get(id); s.handleLookupError(w, id, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": []any{}})
 }

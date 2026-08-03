@@ -178,8 +178,13 @@ func TestHealth(t *testing.T) {
 	// The exec entry names the control WebSocket, and checkpoint create is the
 	// singular path.
 	joined := strings.Join(payload.Implemented, "\n")
-	if !strings.Contains(joined, "exec (control WebSocket)") {
+	if !strings.Contains(joined, "exec (control WebSocket") {
 		t.Fatalf("coverage list missing WS exec entry: %v", payload.Implemented)
+	}
+	// The same path answers a plain GET with the session list, and a client
+	// reading this list should be able to see that without trying it.
+	if !strings.Contains(joined, "session list when not upgraded") {
+		t.Fatalf("coverage list does not advertise the exec session list: %v", payload.Implemented)
 	}
 	if !strings.Contains(joined, "POST /v1/sprites/{id}/checkpoint\n") && !strings.HasSuffix(joined, "POST /v1/sprites/{id}/checkpoint") {
 		t.Fatalf("coverage list missing singular checkpoint create: %v", payload.Implemented)
@@ -514,5 +519,67 @@ func TestEmptyFSMarshalsAsObject(t *testing.T) {
 	_, body := h.do(http.MethodGet, "/v1/sprites/s", nil)
 	if s := string(body); !strings.Contains(s, `"fs":{}`) || !strings.Contains(s, `"checkpoints":[]`) {
 		t.Fatalf("empty sprite GET body = %s, want fs:{} and checkpoints:[]", s)
+	}
+}
+
+// A plain GET on the exec path is the session list, not a failed upgrade.
+//
+// sprites-ex asks for it before deciding whether to reattach, so answering 426
+// here stopped every fountain turn before anything ran (#18).
+func TestExecPlainGetReturnsSessionList(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "demo"}); code != http.StatusCreated {
+		t.Fatalf("create sprite: %d %s", code, body)
+	}
+
+	code, body := h.do(http.MethodGet, "/v1/sprites/demo/exec", nil)
+	if code != http.StatusOK {
+		t.Fatalf("plain GET on exec: got %d, want 200 (body %q)", code, body)
+	}
+
+	var payload struct {
+		Sessions []any `json:"sessions"`
+	}
+	h.mustJSON(body, &payload)
+	if payload.Sessions == nil {
+		t.Fatal(`sessions must be present and an array, not null: a client reads body["sessions"] directly`)
+	}
+	if len(payload.Sessions) != 0 {
+		t.Fatalf("a sprite that is not mid-exec has no sessions, got %d", len(payload.Sessions))
+	}
+}
+
+// "no sessions" and "no sprite" are different answers.
+func TestExecPlainGetOnMissingSpriteIs404(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodGet, "/v1/sprites/nope/exec", nil); code != http.StatusNotFound {
+		t.Fatalf("exec session list on a missing sprite: got %d, want 404 (body %q)", code, body)
+	}
+}
+
+// A Connection header of "keep-alive, Upgrade" is still an upgrade — proxies
+// routinely send the list form, and an equality check would route it to the
+// session list and break exec behind any proxy.
+func TestConnectionHeaderListIsAnUpgrade(t *testing.T) {
+	for _, tc := range []struct {
+		conn, upgrade string
+		want          bool
+	}{
+		{"Upgrade", "websocket", true},
+		{"keep-alive, Upgrade", "websocket", true},
+		{"upgrade", "WebSocket", true},
+		{"keep-alive", "websocket", false},
+		{"", "", false},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/v1/sprites/demo/exec", nil)
+		if tc.conn != "" {
+			r.Header.Set("Connection", tc.conn)
+		}
+		if tc.upgrade != "" {
+			r.Header.Set("Upgrade", tc.upgrade)
+		}
+		if got := isWebSocketUpgrade(r); got != tc.want {
+			t.Errorf("Connection=%q Upgrade=%q: got %v, want %v", tc.conn, tc.upgrade, got, tc.want)
+		}
 	}
 }
