@@ -63,14 +63,6 @@ func (s *Server) execSpriteWS(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Drain any client stdin frames in the background. The interpreter does not
-	// read stdin, so the bytes are discarded, but reading keeps the connection
-	// responsive and honors a client that streams stdin then a StreamStdinEOF
-	// frame. Draining stops on EOF, read error, or connection close.
-	if r.URL.Query().Get("stdin") != "false" {
-		go drainStdin(ctx, c)
-	}
-
 	result, err := s.store.Exec(id, cmd)
 	if err != nil {
 		if errors.Is(err, sprite.ErrNotFound) {
@@ -91,11 +83,62 @@ func (s *Server) execSpriteWS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A known verb has said everything it is going to say, so exit and close —
+	// unchanged behaviour, and what every existing client depends on.
+	//
+	// An unknown command is a different situation. A real sprite would have
+	// started a process the caller can now write to, and callers do: fountain
+	// opens exec for its runtime command and then writes the prompt in as
+	// stdin. Exiting immediately means that write lands on a process that has
+	// already gone, and the caller's conversation server crashes on a call to
+	// a dead pid rather than getting an error back (INTENTIUS/spritzer#18).
+	//
+	// So an unrecognised command holds the session open and echoes stdin back
+	// on stdout until the caller says it is done. Still not execution — it is
+	// the same echo the interpreter already does, extended over time.
+	if result.Unrecognised && r.URL.Query().Get("stdin") != "false" {
+		echoStdinUntilEOF(ctx, c)
+	} else if r.URL.Query().Get("stdin") != "false" {
+		// Known verb: drain and discard, so a client that speaks the full
+		// framing does not stall on a write nobody is reading.
+		go drainStdin(ctx, c)
+	}
+
 	if err := writeFrame(ctx, c, streamExit, []byte{byte(result.ExitCode)}); err != nil {
 		return
 	}
 
 	_ = c.Close(websocket.StatusNormalClosure, "")
+}
+
+// echoStdinUntilEOF keeps an unrecognised command's session alive, echoing each
+// stdin frame back on stdout, until the client sends StreamStdinEOF or the
+// connection ends.
+//
+// This is the whole of "holding the session open": no process exists, and the
+// bytes come straight back. What it buys is that a client which writes after
+// opening exec finds something on the other end, which is the difference
+// between a turn that completes and one that is orphaned.
+func echoStdinUntilEOF(ctx context.Context, c *websocket.Conn) {
+	for {
+		_, data, err := c.Read(ctx)
+		if err != nil {
+			return
+		}
+		if len(data) == 0 {
+			continue
+		}
+		switch data[0] {
+		case streamStdinEOF:
+			return
+		case streamStdin:
+			if len(data) > 1 {
+				if err := writeFrame(ctx, c, streamStdout, data[1:]); err != nil {
+					return
+				}
+			}
+		}
+	}
 }
 
 // reconstructCmd rebuilds the command line from the exec query params. Repeated
