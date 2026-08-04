@@ -583,3 +583,80 @@ func TestConnectionHeaderListIsAnUpgrade(t *testing.T) {
 		}
 	}
 }
+
+// A known verb still exits immediately. Every existing client depends on this,
+// including chant's Fly activities, so the interactive path below must not
+// change it.
+func TestKnownVerbStillExitsImmediately(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "known"}); code != http.StatusCreated {
+		t.Fatalf("create sprite: %d %s", code, body)
+	}
+
+	stdout, _, exit := h.execWS("known", "echo hi")
+	if stdout != "hi\n" || exit != 0 {
+		t.Fatalf("echo hi: stdout=%q exit=%d, want \"hi\\n\" and 0", stdout, exit)
+	}
+}
+
+// An unrecognised command holds the session open and echoes stdin back, so a
+// client that writes after opening exec finds something on the other end.
+//
+// That is the difference between a fountain turn completing and being orphaned
+// on a write to a process that already exited (#18).
+func TestUnrecognisedCommandEchoesStdinUntilEOF(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/sprites", map[string]any{"name": "interactive"}); code != http.StatusCreated {
+		t.Fatalf("create sprite: %d %s", code, body)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	u := "ws" + strings.TrimPrefix(h.ts.URL, "http") +
+		"/v1/sprites/interactive/exec?cmd=" + url.QueryEscape("claude --print")
+	c, _, err := websocket.Dial(ctx, u, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.CloseNow() }()
+
+	// The command itself comes back first, as it always has.
+	if got := readFrameOfStream(t, ctx, c, streamStdout); got != "claude --print\n" {
+		t.Fatalf("command echo: got %q", got)
+	}
+
+	// Now write stdin the way a client does after opening exec. Before this
+	// change the session had already closed and this write went nowhere.
+	if err := c.Write(ctx, websocket.MessageBinary, append([]byte{streamStdin}, []byte("say hello")...)); err != nil {
+		t.Fatalf("write stdin: %v", err)
+	}
+	if got := readFrameOfStream(t, ctx, c, streamStdout); got != "say hello" {
+		t.Fatalf("stdin echo: got %q, want %q", got, "say hello")
+	}
+
+	// EOF ends the turn, and only then does the exit frame arrive.
+	if err := c.Write(ctx, websocket.MessageBinary, []byte{streamStdinEOF}); err != nil {
+		t.Fatalf("write eof: %v", err)
+	}
+	typ, data, err := c.Read(ctx)
+	if err != nil {
+		t.Fatalf("read exit: %v", err)
+	}
+	if typ != websocket.MessageBinary || len(data) != 2 || data[0] != streamExit || data[1] != 0 {
+		t.Fatalf("exit frame: typ=%v data=%v", typ, data)
+	}
+}
+
+// readFrameOfStream reads one binary frame and asserts its stream id.
+func readFrameOfStream(t *testing.T, ctx context.Context, c *websocket.Conn, want byte) string {
+	t.Helper()
+	_, data, err := c.Read(ctx)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(data) == 0 || data[0] != want {
+		t.Fatalf("frame stream id: got %v, want %d", data, want)
+	}
+	return string(data[1:])
+}

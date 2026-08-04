@@ -95,6 +95,15 @@ type ExecResult struct {
 	Stdout   string
 	Stderr   string
 	ExitCode int
+	// Unrecognised reports that at least one segment fell through to the
+	// echo-back default rather than matching a scripted verb.
+	//
+	// The interpreter answers a known verb and is done. An unknown command is
+	// a different situation: the caller asked for something this emulator has
+	// no script for, and a real sprite would have started a process the caller
+	// can now talk to. The server uses this to decide whether the exec session
+	// is one-shot or stays open for stdin — see internal/server/ws.go.
+	Unrecognised bool
 }
 
 // View is the read-only projection returned by GET /v1/sprites/{id}: the

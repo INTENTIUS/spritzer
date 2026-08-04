@@ -23,6 +23,7 @@ var (
 func execInto(sp *Sprite, cmd string) ExecResult {
 	var stdout, stderr strings.Builder
 	exitCode := 0
+	unrecognised := false
 
 	for _, raw := range strings.Split(cmd, ";") {
 		seg := strings.TrimSpace(raw)
@@ -68,10 +69,16 @@ func execInto(sp *Sprite, cmd string) ExecResult {
 			// execution.
 			stdout.WriteString(seg + "\n")
 			exitCode = 0
+			unrecognised = true
 		}
 	}
 
-	return ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: exitCode}
+	return ExecResult{
+		Stdout:       stdout.String(),
+		Stderr:       stderr.String(),
+		ExitCode:     exitCode,
+		Unrecognised: unrecognised,
+	}
 }
 
 // unquote strips a single pair of matching single or double quotes.
