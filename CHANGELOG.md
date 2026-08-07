@@ -6,6 +6,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-07
+
+Both changes here are about the same client situation: fountain opens `exec`
+for its runtime command and then writes the prompt in as **stdin**. Against
+0.4.1 neither half of that worked, and a turn could not complete.
+
+### Added
+
+- A plain `GET` on `/v1/sprites/{id}/exec` — no `Upgrade` — is now the session
+  list, answering `{"sessions": []}` for an idle sprite instead of falling
+  through to the WebSocket handler and returning `426`. sprites-ex's
+  `Session.list_by_name/2` is an unupgraded GET, and fountain calls it before
+  deciding whether to reattach or start fresh, so the `426` aborted that
+  decision. A missing sprite is still `404`: "no sessions" and "no sprite" are
+  different answers. The upgrade check reads `Connection` and `Upgrade` as the
+  lists they are, so `Connection: keep-alive, Upgrade` from a proxy still
+  reaches exec — INTENTIUS/spritzer#18, #19.
+
+### Changed
+
+- An **unrecognised** command now holds the exec session open, echoing stdin
+  back on stdout until `StreamStdinEOF` or close, instead of exiting as soon as
+  it has produced output. A real sprite would have started a process the caller
+  can write to, and callers do; exiting immediately meant fountain's prompt
+  write landed on a process that was already gone. Still not execution — the
+  same echo the interpreter already did, extended over time —
+  INTENTIUS/spritzer#18, #20.
+
+  **Known verbs are unaffected.** `echo`, `cat`, `rm` and the rest exit
+  immediately exactly as before, which is what chant's Fly lexicon activities
+  depend on. `ExecResult.Unrecognised` is set by the interpreter's default
+  branch so the server tells the two apart without inspecting the command
+  string, and `TestKnownVerbStillExitsImmediately` asserts it separately so the
+  two paths cannot drift.
+
 ## [0.4.1] - 2026-07-14
 
 ### Fixed
@@ -148,7 +183,8 @@ real API assigns the id and the caller controls only a comment.
 - Distroless container image, GoReleaser configuration, mkdocs-material doc site,
   and CI.
 
-[Unreleased]: https://github.com/intentius/spritzer/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/intentius/spritzer/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/intentius/spritzer/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/intentius/spritzer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/intentius/spritzer/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/intentius/spritzer/compare/v0.3.0...v0.3.1
