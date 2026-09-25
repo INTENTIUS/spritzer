@@ -57,6 +57,37 @@ func TestExecArgv(t *testing.T) {
 	}
 }
 
+func TestFSWriteArgs(t *testing.T) {
+	cases := []struct {
+		q       url.Values
+		want    []string
+		wantErr bool
+	}{
+		{url.Values{}, []string{"write"}, false},
+		{url.Values{"path": {"/work/a"}}, []string{"write"}, false},
+		{url.Values{"mode": {"0755"}}, []string{"write", "--mode", "0755"}, false},
+		{url.Values{"mode": {"644"}}, []string{"write", "--mode", "644"}, false},
+		{url.Values{"mode": {"not-octal"}}, nil, true},
+		{url.Values{"mode": {"999"}}, nil, true},
+	}
+	for _, c := range cases {
+		got, err := fsWriteArgs(c.q)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("fsWriteArgs(%v): want error, got %q", c.q, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("fsWriteArgs(%v): unexpected error %v", c.q, err)
+			continue
+		}
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("fsWriteArgs(%v) = %q, want %q", c.q, got, c.want)
+		}
+	}
+}
+
 func TestContainerModeRoutes(t *testing.T) {
 	rt := &stubRuntime{}
 	srv := New(Options{Runtime: rt, URLDomain: "localhost"})

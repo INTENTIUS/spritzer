@@ -43,7 +43,7 @@ pods and `pods/exec`.
 | `exec` | `spritzer x-exec --id <id> [--dir] [--env]... -- argv`, which sets the directory and environment, records its pid under the exec id, and becomes the command. If the client disconnects first, `spritzer x-kill <id>` stops the process group. |
 | services | `spritzer x-relay unix:/.sprite/api.sock`, used as the connection of an HTTP transport; requests go to the agent verbatim. |
 | sprite URL | `spritzer x-relay url`, which connects to the `http_port` service's port, else 8080, retrying for a few seconds while a service binds. |
-| filesystem | `spritzer x-fs <op> <path>`, where op is read, write, list or delete. |
+| filesystem | `spritzer x-fs <op> <path>`, where op is read, write, list or delete. A write takes the query's `mode` as `--mode <octal>`, defaulting to `0644`. |
 | create | `spritzer x-ping` until the agent answers. |
 
 On Kubernetes exec uses the `v5.channel.k8s.io` WebSocket protocol, which can

@@ -218,8 +218,10 @@ type DirEntry struct {
 	Size int64  `json:"size,omitempty"`
 }
 
-// FS is `spritzer x-fs <read|write|list|delete> <path> [--recursive]`, backing
-// the filesystem API in container mode. Missing paths exit ExitNotFound.
+// FS is `spritzer x-fs <read|write|list|delete> <path> [--mode <octal>]
+// [--recursive]`, backing the filesystem API in container mode. `--mode`
+// applies to write only, defaulting to 0644 when absent, as the Sprites API
+// and wisp do. Missing paths exit ExitNotFound.
 func FS(args []string) int {
 	if len(args) < 2 {
 		return ExitUsage
@@ -241,6 +243,18 @@ func FS(args []string) int {
 		}
 		return ExitOK
 	case "write":
+		mode := os.FileMode(0o644)
+		if len(args) > 2 {
+			if args[2] != "--mode" || len(args) != 4 {
+				return ExitUsage
+			}
+			m, err := strconv.ParseUint(args[3], 8, 32)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "invalid --mode:", args[3])
+				return ExitUsage
+			}
+			mode = os.FileMode(m)
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return fsErr(err)
 		}
@@ -253,7 +267,7 @@ func FS(args []string) int {
 			_ = os.Remove(tmp.Name())
 			return ExitFailed
 		}
-		_ = tmp.Chmod(0o644)
+		_ = tmp.Chmod(mode)
 		_ = tmp.Close()
 		if err := os.Rename(tmp.Name(), path); err != nil {
 			_ = os.Remove(tmp.Name())

@@ -162,7 +162,9 @@ What each part of the API does in this mode:
   HTTP and WebSocket to the service with an `http_port`, else port 8080. The
   path form strips `/s/<name>` and sends `X-Forwarded-Prefix`. Nothing listening
   is a `503` with `Retry-After`.
-- The filesystem API reads and writes the container's real files.
+- The filesystem API reads and writes the container's real files. A write
+  applies the requested `mode` (e.g. `?mode=0755`), defaulting to `0644` when
+  none is given, as the Sprites API and wisp do.
 - Checkpoints and restore answer `501` in this mode
   ([#23](https://github.com/intentius/spritzer/issues/23)). Network policy is
   stored and returned, not enforced: a sprite's egress is not restricted.

@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Container exec mode: a file write honours the requested `mode` (e.g.
+  `?mode=0755`), applied to the file inside the sprite container on both the
+  Docker and Kubernetes runtimes. It was always written `0644`, so a script
+  written with an executable mode needed a separate `exec chmod` before it
+  could run; the Sprites API and wisp already honour it. Defaults to `0644`
+  when no mode is given, unchanged from before. INTENTIUS/spritzer#29.
+
 ## [0.6.1] - 2026-09-25
 
 ### Fixed
