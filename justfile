@@ -40,6 +40,14 @@ tidy:
 fmt:
     gofmt -w .
 
+# Container exec mode acceptance on a throwaway k3d cluster (INTENTIUS/spritzer#22).
+e2e-real:
+    ./scripts/e2e-k3d.sh
+
+# Container exec mode acceptance against the local Docker daemon.
+e2e-docker:
+    ./scripts/e2e-docker.sh
+
 # Build the container image.
 docker:
     docker build -t {{image}}:{{version}} .

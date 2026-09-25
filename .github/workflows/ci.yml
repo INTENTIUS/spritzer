@@ -58,3 +58,23 @@ jobs:
 
       - name: Build docs (strict)
         run: mkdocs build --strict
+
+  e2e:
+    name: Container exec mode (Docker and k3d)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Install k3d
+        run: curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.8.3 bash
+
+      - name: Acceptance on Docker
+        run: ./scripts/e2e-docker.sh
+
+      - name: Acceptance on k3d
+        run: ./scripts/e2e-k3d.sh

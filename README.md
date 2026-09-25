@@ -103,6 +103,83 @@ as `[1]<bytes>`, stderr as `[2]<bytes>`, then `[3]<exitCodeByte>`. So
 `echo hi` yields `[1]"hi\n"` then `[3]\x00` (exit 0), and `./risky.sh` yields
 `[2]"risky.sh: failed\n"` then `[3]\x01` (exit 1).
 
+## Container exec mode
+
+The interpreter above is the default and does not change. Set
+`SPRITZER_EXEC=container` and each sprite becomes a container instead: exec runs
+the real command, services keep running after the exec that started them, and
+the sprite URL reaches whatever listens on the sprite's port 8080. This is the
+mode for hosting a real workload locally, such as an arugula studio box or a
+fountain turn whose agent actually runs.
+
+Two runtimes are supported. Kubernetes runs each sprite as a pod
+`sprite-<name>` in spritzer's own namespace, using the in-cluster service
+account. Docker runs each sprite as a container `spritzer-<name>` through the
+Docker socket, which is the quick loop on a laptop.
+
+```sh
+# Docker: spritzer on the host, sprites as containers.
+docker build -t spritzer:dev .
+SPRITZER_EXEC=container SPRITZER_AGENT_IMAGE=spritzer:dev SPRITZER_URL_DOMAIN=localhost spritzer
+
+curl -s -X POST localhost:4290/v1/sprites -d '{"name":"box"}'
+# => {"id":"box","url":"http://box.localhost:4290"}
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SPRITZER_EXEC` | `interpreter` | `container` turns this mode on. |
+| `SPRITZER_RUNTIME` | `kubernetes` in a cluster, else `docker` | Which runtime holds the sprites. |
+| `SPRITZER_SPRITE_IMAGE` | `node:22-bookworm` | The image every sprite runs (Debian with node, git, python3 and curl). |
+| `SPRITZER_AGENT_IMAGE` | `ghcr.io/intentius/spritzer:<version>` | spritzer's own image. Its Linux binary is copied into each sprite as the agent. A development build has no published image, so it must be set. |
+| `SPRITZER_NAMESPACE` | the service account's | Kubernetes namespace for sprite pods. |
+| `SPRITZER_URL_DOMAIN` | unset | Also serve each sprite at `<name>.<domain>`, and return that as its URL. `localhost` works in browsers without DNS. |
+| `SPRITZER_CREATE_TIMEOUT` | `5m` | How long a create may take, image pulls included. |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker runtime only; unix sockets only. |
+
+What each part of the API does in this mode:
+
+- Create starts the container and returns once the agent inside answers. Names
+  must be DNS labels. Destroy removes the container or pod and returns once it
+  is gone. `GET /v1/sprites` lists the sprites the runtime holds, and a
+  restarted spritzer adopts them.
+- Exec runs the command over the same framed WebSocket, streaming stdout and
+  stderr as they are produced and passing stdin through. Repeated `cmd` params
+  are an argv; a single `cmd` holding a command line runs under `/bin/sh -c`.
+  `env` (repeatable `KEY=value`) and `dir` are honoured. A client that
+  disconnects before the command exits has it killed. There is no TTY yet.
+- Services follow wisp's guest API, which follows Sprites:
+  `PUT /v1/sprites/{id}/services/{name}` with
+  `{"cmd","args","env","dir","needs","http_port"}` creates and starts one and
+  streams NDJSON events for `?duration` (default 5s); `start`, `stop`,
+  `restart`, `logs`, `signal` and `DELETE` are there too. Inside the sprite,
+  `sprite-env services create web --cmd python3 --args -m,http.server,8080 --http-port 8080`
+  talks to the same agent on `/.sprite/api.sock`, and `PUT /v1/tasks` there is
+  accepted for keep-awake loops. Definitions live in `/.sprite/services`, logs
+  in `/.sprite/logs/services/<name>.log`. Services restart when they crash and
+  all start again when the container restarts.
+- The sprite URL, `/s/<name>/...` and `<name>.<SPRITZER_URL_DOMAIN>`, proxies
+  HTTP and WebSocket to the service with an `http_port`, else port 8080. The
+  path form strips `/s/<name>` and sends `X-Forwarded-Prefix`. Nothing listening
+  is a `503` with `Retry-After`.
+- The filesystem API reads and writes the container's real files.
+- Checkpoints and restore answer `501` in this mode
+  ([#23](https://github.com/intentius/spritzer/issues/23)). Network policy and
+  tasks on the public API are stored, not enforced.
+
+On Kubernetes, spritzer's service account needs `pods` create, get, list, watch
+and delete, and `pods/exec` create and get, in its namespace.
+[`deploy/k8s/container-mode.yaml`](deploy/k8s/container-mode.yaml) is a complete
+example. Nothing inside a sprite has to be reachable from spritzer: the agent
+binary is copied in by an init container (a named volume on Docker), and
+spritzer reaches services and the URL port by exec'ing `spritzer x-relay` in
+the sprite, so the same code works on Docker Desktop and in a cluster.
+
+`just e2e-docker` and `just e2e-real` (a throwaway k3d cluster) run the
+acceptance test in `e2e/`, which CI also runs. See the
+[container mode docs](https://intentius.github.io/spritzer/container-mode/) for
+the design.
+
 ## Comparison
 
 | Capability | spritzer | Schema mock | Real Sprites |
@@ -112,7 +189,7 @@ as `[1]<bytes>`, stderr as `[2]<bytes>`, then `[3]<exitCodeByte>`. So
 | Destroyed-sprite `404` semantics | Yes | No | Yes |
 | Runs fully offline | Yes | Yes | No |
 | Cost | Free | Free | Billed |
-| Real sandboxes, images, code execution | No | No | Yes |
+| Real code execution, images, services | With `SPRITZER_EXEC=container` | No | Yes |
 
 ## API coverage
 

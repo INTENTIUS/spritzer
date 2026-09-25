@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Container exec mode, opt-in with `SPRITZER_EXEC=container`: each sprite is a
+  container, on Kubernetes (a pod per sprite in spritzer's namespace) or on
+  Docker (through the Docker socket). Exec runs the real command over the same
+  framed WebSocket, with stdin, `env` and `dir`, and kills it if the client
+  disconnects. Services follow wisp's guest API, from outside at
+  `/v1/sprites/{id}/services/...` and from inside with `sprite-env` on
+  `/.sprite/api.sock`, and outlive the exec that started them. The sprite URL,
+  `/s/<name>` and `<name>.<SPRITZER_URL_DOMAIN>`, proxies HTTP and WebSocket to
+  the `http_port` service or port 8080. The filesystem API reads and writes the
+  container's files, and `GET /v1/sprites` lists sprites. Checkpoints answer
+  `501` in this mode (#23). The same binary is the in-sprite agent
+  (`spritzer agent`, `sprite-env`, `x-*` helpers), copied into each sprite from
+  `SPRITZER_AGENT_IMAGE`. `deploy/k8s/container-mode.yaml` has the RBAC, and
+  `just e2e-docker` / `just e2e-real` run the acceptance on Docker and on a
+  throwaway k3d cluster, as CI does. INTENTIUS/spritzer#22.
+
+  The interpreter stays the default and is unchanged, so chant's Fly lexicon
+  tests against spritzer keep their meaning.
+
 ## [0.5.0] - 2026-08-07
 
 Both changes here are about the same client situation: fountain opens `exec`

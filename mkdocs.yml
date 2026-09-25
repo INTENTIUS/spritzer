@@ -42,4 +42,5 @@ nav:
   - Getting started: getting-started.md
   - API coverage: api-coverage.md
   - Fidelity: fidelity.md
+  - Container exec mode: container-mode.md
   - Contributing: contributing.md
