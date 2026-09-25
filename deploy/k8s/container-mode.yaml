@@ -1,6 +1,6 @@
 # spritzer in container exec mode on Kubernetes: every sprite is a pod in this
 # namespace. The e2e script (scripts/e2e-k3d.sh) applies this file after
-# replacing NAMESPACE, SPRITZER_IMAGE and SPRITE_IMAGE; fountain-ops declares
+# replacing __NAMESPACE__, __SPRITZER_IMAGE__ and __SPRITE_IMAGE__; fountain-ops declares
 # the same objects in chant.
 #
 # What spritzer's service account needs: create, read and delete pods, and
@@ -8,19 +8,19 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: NAMESPACE
+  name: __NAMESPACE__
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: spritzer
-  namespace: NAMESPACE
+  namespace: __NAMESPACE__
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: spritzer-sprites
-  namespace: NAMESPACE
+  namespace: __NAMESPACE__
 rules:
   - apiGroups: [""]
     resources: ["pods"]
@@ -33,11 +33,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: spritzer-sprites
-  namespace: NAMESPACE
+  namespace: __NAMESPACE__
 subjects:
   - kind: ServiceAccount
     name: spritzer
-    namespace: NAMESPACE
+    namespace: __NAMESPACE__
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -47,7 +47,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: spritzer
-  namespace: NAMESPACE
+  namespace: __NAMESPACE__
   labels: { app: spritzer }
 spec:
   replicas: 1
@@ -61,13 +61,13 @@ spec:
       securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532 }
       containers:
         - name: spritzer
-          image: SPRITZER_IMAGE
+          image: __SPRITZER_IMAGE__
           imagePullPolicy: IfNotPresent
           env:
             - { name: SPRITZER_EXEC, value: container }
             - { name: SPRITZER_RUNTIME, value: kubernetes }
-            - { name: SPRITZER_AGENT_IMAGE, value: SPRITZER_IMAGE }
-            - { name: SPRITZER_SPRITE_IMAGE, value: SPRITE_IMAGE }
+            - { name: SPRITZER_AGENT_IMAGE, value: __SPRITZER_IMAGE__ }
+            - { name: SPRITZER_SPRITE_IMAGE, value: __SPRITE_IMAGE__ }
             - { name: SPRITZER_URL_DOMAIN, value: localhost }
           ports:
             - { name: http, containerPort: 4290 }
@@ -83,7 +83,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: spritzer
-  namespace: NAMESPACE
+  namespace: __NAMESPACE__
 spec:
   selector: { app: spritzer }
   ports:

@@ -35,7 +35,7 @@ ctx="k3d-$cluster"
 k3d image import -c "$cluster" "$tag" "$sprite_image" >/dev/null
 
 echo "--> deploying spritzer (container mode) into $ns"
-sed -e "s|NAMESPACE|$ns|g" -e "s|SPRITZER_IMAGE|$tag|g" -e "s|SPRITE_IMAGE|$sprite_image|g" \
+sed -e "s|__NAMESPACE__|$ns|g" -e "s|__SPRITZER_IMAGE__|$tag|g" -e "s|__SPRITE_IMAGE__|$sprite_image|g" \
   deploy/k8s/container-mode.yaml | kubectl --context "$ctx" apply -f - >/dev/null
 kubectl --context "$ctx" -n "$ns" rollout status deploy/spritzer --timeout=180s
 
