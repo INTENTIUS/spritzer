@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -516,9 +518,30 @@ func (s *Server) realFSWrite(w http.ResponseWriter, r *http.Request) {
 	if body == nil {
 		body = []byte{}
 	}
-	if _, ok := s.fsRun(w, r, body, "write"); ok {
+	args, err := fsWriteArgs(r.URL.Query())
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, ok := s.fsRun(w, r, body, args...); ok {
 		writeJSON(w, http.StatusOK, struct{}{})
 	}
+}
+
+// fsWriteArgs builds the extra `x-fs write` args from the request's query: a
+// `mode` (octal, e.g. "0755") rides as `--mode <value>`, applied to the file
+// in the sprite container as the Sprites API and wisp do. Absent, the agent
+// defaults to 0644.
+func fsWriteArgs(q url.Values) ([]string, error) {
+	args := []string{"write"}
+	mode := q.Get("mode")
+	if mode == "" {
+		return args, nil
+	}
+	if _, err := strconv.ParseUint(mode, 8, 32); err != nil {
+		return nil, fmt.Errorf("mode must be octal, e.g. 0755: %q", mode)
+	}
+	return append(args, "--mode", mode), nil
 }
 
 func (s *Server) realFSRead(w http.ResponseWriter, r *http.Request) {

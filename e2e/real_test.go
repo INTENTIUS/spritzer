@@ -205,6 +205,21 @@ exit 3`
 		t.Logf("disconnected exec -> its process was killed")
 	}()
 
+	// A file written with mode 0755 is executable in the sprite (#29): the
+	// write is unusable as a script unless the mode actually reached the
+	// container, since the default the write path used to always fall back
+	// to (0644) cannot be exec'd.
+	modeScript := "#!/bin/sh\necho ran with mode\n"
+	st, body = call(t, http.MethodPut, "/v1/sprites/"+name+"/fs/write?path=/tmp/mode-test.sh&mode=0755", strings.NewReader(modeScript), "")
+	if st != http.StatusOK {
+		t.Fatalf("fs write with mode=0755: %d %s", st, body)
+	}
+	r = run(t, name, argv("/tmp/mode-test.sh"), "")
+	if r.code != 0 || r.stdout != "ran with mode\n" {
+		t.Fatalf("exec of a file written with mode 0755: code %d stdout %q stderr %q", r.code, r.stdout, r.stderr)
+	}
+	t.Logf("fs write mode=0755 -> the sprite ran it directly")
+
 	// 4. a service, started from inside with sprite-env, serving on 8080
 	st, _ = call(t, http.MethodPut, "/v1/sprites/"+name+"/fs/write?path=/srv/www/hello.txt", strings.NewReader("hello from the sprite\n"), "")
 	if st != http.StatusOK {
