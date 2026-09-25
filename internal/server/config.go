@@ -149,11 +149,13 @@ func (s *Server) setPolicy(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeJSON(w, r, &req) {
 		return
 	}
-	rules, err := s.store.SetPolicy(id, req.Rules)
-	if s.handleLookupError(w, id, err) {
+	// The Sprites API answers a policy update with 204 and no body. The
+	// official SDKs (Go, JS, Python, Elixir) treat any other status as a
+	// failure, so a 200 with the stored rules breaks their clients (#26).
+	if _, err := s.store.SetPolicy(id, req.Rules); s.handleLookupError(w, id, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, policyBody{Rules: rules})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---- services ----

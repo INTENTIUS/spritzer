@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `POST /v1/sprites/{id}/policy/network` answers `204` with no body, as the
+  Sprites API does. It answered `200` with the stored rules, which every
+  official SDK (Go, JS, Python, Elixir) treats as a failure, so fountain could
+  not provision a `networking_type: limited` Environment on spritzer. The
+  policy is still stored and returned by `GET`, and still not enforced in
+  either mode. INTENTIUS/spritzer#26.
+
 ## [0.6.0] - 2026-09-25
 
 ### Added
