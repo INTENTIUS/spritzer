@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/intentius/spritzer/internal/clock"
+	"github.com/intentius/spritzer/internal/runtime"
 	"github.com/intentius/spritzer/internal/sprite"
 )
 
@@ -40,6 +41,13 @@ type Options struct {
 	Version string
 	Clock   clock.Clock
 	Logger  *slog.Logger
+	// Runtime, when set, is container exec mode: sprites are containers and
+	// exec runs real commands (see real.go). Nil is the scripted interpreter.
+	Runtime runtime.Backend
+	// URLDomain, in container mode, also serves each sprite's URL at
+	// <name>.<URLDomain> (for example "localhost", giving
+	// http://box.localhost:4290). The path form /s/<name> always works.
+	URLDomain string
 }
 
 // Server holds the spritzer state and serves the API.
@@ -49,6 +57,8 @@ type Server struct {
 	store   *sprite.Store
 	clock   clock.Clock
 	mux     *http.ServeMux
+	handler http.Handler
+	real    *realMode
 }
 
 // New constructs a Server, filling in sensible defaults for any zero option.
@@ -68,15 +78,28 @@ func New(opts Options) *Server {
 		store:   sprite.New(opts.Clock),
 		clock:   opts.Clock,
 	}
+	if opts.Runtime != nil {
+		s.real = newRealMode(opts.Runtime, opts.URLDomain)
+	}
 	s.routes()
 	return s
 }
 
 // Handler returns the HTTP handler for the server.
-func (s *Server) Handler() http.Handler { return s.mux }
+func (s *Server) Handler() http.Handler { return s.handler }
 
 func (s *Server) routes() {
 	mux := http.NewServeMux()
+	s.mux, s.handler = mux, mux
+	mux.HandleFunc("GET /_spritzer/health", s.health)
+
+	if s.real != nil {
+		s.realRoutes(mux)
+		if s.real.urlDomain != "" {
+			s.handler = s.hostRouted(mux)
+		}
+		return
+	}
 
 	mux.HandleFunc("POST /v1/sprites", s.createSprite)
 	mux.HandleFunc("GET /v1/sprites/{id}/exec", s.execSpriteWS)
@@ -89,10 +112,6 @@ func (s *Server) routes() {
 
 	// Filesystem, network policy, services, and keep-alive tasks (#855).
 	s.configRoutes(mux)
-
-	mux.HandleFunc("GET /_spritzer/health", s.health)
-
-	s.mux = mux
 }
 
 // ---- request/response wire types ----
@@ -249,11 +268,17 @@ func (s *Server) getSprite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
+	body := map[string]any{
 		"status":      "ok",
 		"version":     s.version,
 		"implemented": implementedPaths,
-	})
+	}
+	if s.real != nil {
+		body["exec"] = "container"
+		body["runtime"] = s.real.rt.Kind()
+		body["implemented"] = append(append([]string{}, implementedPaths...), realPaths...)
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 // ---- helpers ----

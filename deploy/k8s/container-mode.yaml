@@ -1,0 +1,90 @@
+# spritzer in container exec mode on Kubernetes: every sprite is a pod in this
+# namespace. The e2e script (scripts/e2e-k3d.sh) applies this file after
+# replacing NAMESPACE, SPRITZER_IMAGE and SPRITE_IMAGE; fountain-ops declares
+# the same objects in chant.
+#
+# What spritzer's service account needs: create, read and delete pods, and
+# exec into them. Nothing cluster-wide.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: NAMESPACE
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spritzer
+  namespace: NAMESPACE
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spritzer-sprites
+  namespace: NAMESPACE
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spritzer-sprites
+  namespace: NAMESPACE
+subjects:
+  - kind: ServiceAccount
+    name: spritzer
+    namespace: NAMESPACE
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: spritzer-sprites
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spritzer
+  namespace: NAMESPACE
+  labels: { app: spritzer }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: spritzer }
+  template:
+    metadata:
+      labels: { app: spritzer }
+    spec:
+      serviceAccountName: spritzer
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532 }
+      containers:
+        - name: spritzer
+          image: SPRITZER_IMAGE
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: SPRITZER_EXEC, value: container }
+            - { name: SPRITZER_RUNTIME, value: kubernetes }
+            - { name: SPRITZER_AGENT_IMAGE, value: SPRITZER_IMAGE }
+            - { name: SPRITZER_SPRITE_IMAGE, value: SPRITE_IMAGE }
+            - { name: SPRITZER_URL_DOMAIN, value: localhost }
+          ports:
+            - { name: http, containerPort: 4290 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          readinessProbe:
+            httpGet: { path: /_spritzer/health, port: 4290 }
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spritzer
+  namespace: NAMESPACE
+spec:
+  selector: { app: spritzer }
+  ports:
+    - { name: http, port: 4290, targetPort: 4290 }
