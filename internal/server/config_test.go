@@ -93,8 +93,10 @@ func TestNetworkPolicy(t *testing.T) {
 		{"domain": "api.anthropic.com", "action": "allow"},
 		{"domain": "*", "action": "deny"},
 	}}
-	if st, body := h.do("POST", "/v1/sprites/np1/policy/network", rules); st != http.StatusOK {
-		t.Fatalf("set policy: %d %s", st, body)
+	// 204 with an empty body, as the real API answers: the official SDKs
+	// reject anything else (#26).
+	if st, body := h.do("POST", "/v1/sprites/np1/policy/network", rules); st != http.StatusNoContent || len(body) != 0 {
+		t.Fatalf("set policy: %d %q, want 204 and no body", st, body)
 	}
 	var got policyBody
 	_, body := h.do("GET", "/v1/sprites/np1/policy/network", nil)

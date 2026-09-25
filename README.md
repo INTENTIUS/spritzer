@@ -164,8 +164,11 @@ What each part of the API does in this mode:
   is a `503` with `Retry-After`.
 - The filesystem API reads and writes the container's real files.
 - Checkpoints and restore answer `501` in this mode
-  ([#23](https://github.com/intentius/spritzer/issues/23)). Network policy and
-  tasks on the public API are stored, not enforced.
+  ([#23](https://github.com/intentius/spritzer/issues/23)). Network policy is
+  stored and returned, not enforced: a sprite's egress is not restricted.
+  `POST /v1/sprites/{id}/policy/network` answers `204` as Sprites does, and
+  `GET` returns the stored rules. Tasks on the public API are stored, not
+  enforced.
 
 On Kubernetes, spritzer's service account needs `pods` create, get, list, watch
 and delete, and `pods/exec` create and get, in its namespace.
