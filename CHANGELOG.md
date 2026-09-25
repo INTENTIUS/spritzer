@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-25
+
 ### Added
 
 - Container exec mode, opt-in with `SPRITZER_EXEC=container`: each sprite is a
@@ -204,7 +206,8 @@ real API assigns the id and the caller controls only a comment.
 - Distroless container image, GoReleaser configuration, mkdocs-material doc site,
   and CI.
 
-[Unreleased]: https://github.com/intentius/spritzer/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/intentius/spritzer/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/intentius/spritzer/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/intentius/spritzer/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/intentius/spritzer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/intentius/spritzer/compare/v0.3.1...v0.4.0
