@@ -71,7 +71,6 @@ jobs:
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           platforms: "arm64"
-      - run: npx --yes @intentius/chant@0.124.104 release doctor
       - name: goreleaser v2.19.0
         run: "mkdir -p \"$RUNNER_TEMP/goreleaser\" && curl -fsSL -o \"$RUNNER_TEMP/goreleaser/goreleaser.tar.gz\" https://github.com/goreleaser/goreleaser/releases/download/v2.19.0/goreleaser_Linux_x86_64.tar.gz && echo \"ebc3194ad1d1b1787614405285a0039665cd4c5bd3305215a1b201600f90630b  $RUNNER_TEMP/goreleaser/goreleaser.tar.gz\" | sha256sum -c - && tar -xzf \"$RUNNER_TEMP/goreleaser/goreleaser.tar.gz\" -C \"$RUNNER_TEMP/goreleaser\" goreleaser && echo \"CHANT_GORELEASER=$RUNNER_TEMP/goreleaser/goreleaser\" >> \"$GITHUB_ENV\""
       - run: git fetch origin 'refs/tags/ci/*:refs/tags/ci/*'

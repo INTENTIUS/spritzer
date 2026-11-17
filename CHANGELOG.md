@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-17
+
 ### Changed
 
 - Releases are cut and published with `chant release` from the Release
