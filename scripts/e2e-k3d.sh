@@ -32,7 +32,19 @@ docker image inspect "$sprite_image" >/dev/null 2>&1 || docker pull -q "$sprite_
 echo "--> k3d cluster $cluster"
 k3d cluster create "$cluster" --wait --no-lb --k3s-arg '--disable=traefik@server:0' >/dev/null
 ctx="k3d-$cluster"
-k3d image import -c "$cluster" "$tag" "$sprite_image" >/dev/null
+# With Docker's containerd image store (the default from Docker 29, on the
+# ubuntu-26.04 runner), `docker image save` of a multi-platform image writes an
+# index whose other platforms' blobs are absent, and ctr in the k3d node fails
+# with "content digest ... not found". Save one platform into a tar and import that.
+tmp="$(mktemp -d)"
+case "$(uname -m)" in aarch64|arm64) plat=linux/arm64 ;; *) plat=linux/amd64 ;; esac
+i=0
+for img in "$tag" "$sprite_image"; do
+  i=$((i + 1))
+  docker image save --platform "$plat" -o "$tmp/image-$i.tar" "$img" 2>/dev/null \
+    || docker image save -o "$tmp/image-$i.tar" "$img"
+done
+k3d image import -c "$cluster" "$tmp"/image-*.tar >/dev/null
 
 echo "--> deploying spritzer (container mode) into $ns"
 sed -e "s|__NAMESPACE__|$ns|g" -e "s|__SPRITZER_IMAGE__|$tag|g" -e "s|__SPRITE_IMAGE__|$sprite_image|g" \
