@@ -58,5 +58,4 @@ release:
 	git pull --ff-only origin main
 	@grep -q "## \[$(V)\]" CHANGELOG.md || { echo "CHANGELOG.md has no '## [$(V)]' section"; exit 1; }
 	go build ./... && go vet ./... && test -z "$$(gofmt -l .)" && go test ./...
-	git tag -a "v$(V)" -m "spritzer v$(V)"
-	git push origin "v$(V)"
+	gh workflow run release.yml --repo INTENTIUS/spritzer --ref main -f label=$(V)

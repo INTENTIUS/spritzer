@@ -64,8 +64,9 @@ docs-build:
 docs-serve:
     mkdocs serve
 
-# Cut a release: preflight checks, then tag and push vVERSION (triggers the
-# Release workflow, which builds binaries + the GHCR image). Usage:
+# Start a release: preflight checks, then dispatch the Release workflow, which
+# cuts the newest green commit of main with `chant release`, tags it vVERSION,
+# and publishes the binaries, checksums and GHCR image. Usage:
 #   just release 0.2.0
 # The CHANGELOG must already have a `## [VERSION]` section (see RELEASING.md).
 release version:
@@ -80,8 +81,7 @@ release version:
     go vet ./...
     [ -z "$(gofmt -l .)" ] || { echo "✗ gofmt reported files"; exit 1; }
     go test ./...
-    echo "→ tagging v{{version}}"
-    git tag -a "v{{version}}" -m "spritzer v{{version}}"
-    git push origin "v{{version}}"
-    echo "✓ pushed v{{version}} — the Release workflow builds binaries + the GHCR image."
+    echo "→ dispatching the Release workflow for {{version}}"
+    gh workflow run release.yml --repo INTENTIUS/spritzer --ref main -f label={{version}}
+    echo "✓ dispatched {{version}}; the Release workflow cuts v{{version}} and publishes it."
     echo "  watch: gh run watch --repo INTENTIUS/spritzer"

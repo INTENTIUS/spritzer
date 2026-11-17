@@ -39,52 +39,9 @@ archives:
 checksum:
   name_template: checksums.txt
 
-dockers:
-  - image_templates:
-      - "ghcr.io/intentius/spritzer:{{ .Version }}-amd64"
-    dockerfile: Dockerfile.goreleaser
-    use: buildx
-    goos: linux
-    goarch: amd64
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--build-arg=VERSION={{ .Version }}"
-      - "--label=org.opencontainers.image.source=https://github.com/intentius/spritzer"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-  - image_templates:
-      - "ghcr.io/intentius/spritzer:{{ .Version }}-arm64"
-    dockerfile: Dockerfile.goreleaser
-    use: buildx
-    goos: linux
-    goarch: arm64
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--build-arg=VERSION={{ .Version }}"
-      - "--label=org.opencontainers.image.source=https://github.com/intentius/spritzer"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.licenses=MIT"
+# chant release runs goreleaser with --snapshot at the cut; the snapshot
+# version is the release label, so the binaries carry it. The container image
+# is built by chant from the Dockerfile (release.images in chant.config.json).
+snapshot:
+  version_template: "{{ .Env.CHANT_RELEASE_LABEL }}"
 
-docker_manifests:
-  - name_template: "ghcr.io/intentius/spritzer:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/intentius/spritzer:{{ .Version }}-amd64"
-      - "ghcr.io/intentius/spritzer:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/intentius/spritzer:latest"
-    image_templates:
-      - "ghcr.io/intentius/spritzer:{{ .Version }}-amd64"
-      - "ghcr.io/intentius/spritzer:{{ .Version }}-arm64"
-
-changelog:
-  use: github
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-
-release:
-  github:
-    owner: intentius
-    name: spritzer

@@ -1,0 +1,37 @@
+{
+  "release": {
+    "tag": "v{version}",
+    "legacyTags": ["v"],
+    "green": "forge-checks",
+    "images": [
+      {
+        "name": "spritzer",
+        "dockerfile": "Dockerfile",
+        "args": { "VERSION": "{version}" },
+        "labels": {
+          "org.opencontainers.image.source": "https://github.com/intentius/spritzer",
+          "org.opencontainers.image.version": "{version}",
+          "org.opencontainers.image.licenses": "MIT"
+        }
+      }
+    ],
+    "artifacts": [{ "name": "goreleaser", "goreleaser": {} }],
+    "publish": [
+      {
+        "type": "oci",
+        "image": "build/images/spritzer.tar",
+        "repository": "ghcr.io/intentius/spritzer",
+        "tags": ["{label}", "latest"],
+        "platformTags": ["{version}-{arch}"]
+      },
+      {
+        "type": "forge",
+        "forge": "github",
+        "repo": "INTENTIUS/spritzer",
+        "assets": ["artifact:goreleaser"],
+        "notes": { "file": "CHANGELOG.md", "heading": "## [{version}]", "generate": "forge" }
+      }
+    ],
+    "workflow": { "trigger": "dispatch", "file": ".github/workflows/release.yml" }
+  }
+}

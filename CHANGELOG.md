@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Releases are cut and published with `chant release` from the Release
+  workflow, started by hand with the label. The tags stay `vX.Y.Z`, and a
+  release still carries the same archives and `checksums.txt` and pushes
+  `ghcr.io/intentius/spritzer:X.Y.Z`, `:X.Y.Z-amd64`, `:X.Y.Z-arm64` and
+  `:latest` for `linux/amd64` and `linux/arm64`. The image is built from the
+  `Dockerfile`.
+
 ## [0.6.2] - 2026-09-25
 
 ### Fixed
