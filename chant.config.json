@@ -6,9 +6,13 @@
     "images": [
       {
         "name": "spritzer",
-        "build": "{ docker buildx inspect chant-release >/dev/null 2>&1 || docker buildx create --name chant-release --driver docker-container >/dev/null; } && mkdir -p build/images && docker buildx build --builder chant-release --no-cache --platform linux/amd64,linux/arm64 --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH=\"$SOURCE_DATE_EPOCH\" --build-arg VERSION=\"$CHANT_RELEASE_LABEL\" --output type=oci,dest=build/images/spritzer.tar,rewrite-timestamp=true -f Dockerfile . >&2",
-        "archive": "build/images/spritzer.tar",
-        "platforms": ["linux/amd64", "linux/arm64"]
+        "dockerfile": "Dockerfile",
+        "args": { "VERSION": "{version}" },
+        "labels": {
+          "org.opencontainers.image.source": "https://github.com/intentius/spritzer",
+          "org.opencontainers.image.version": "{version}",
+          "org.opencontainers.image.licenses": "MIT"
+        }
       }
     ],
     "artifacts": [{ "name": "goreleaser", "goreleaser": {} }],
@@ -17,7 +21,8 @@
         "type": "oci",
         "image": "build/images/spritzer.tar",
         "repository": "ghcr.io/intentius/spritzer",
-        "tags": ["{label}", "latest"]
+        "tags": ["{label}", "latest"],
+        "platformTags": ["{version}-{arch}"]
       },
       {
         "type": "forge",

@@ -4,7 +4,7 @@ spritzer is released with [`chant release`](https://intentius.io/chant/cli/relea
 A release is one run of the [Release workflow](.github/workflows/release.yml),
 started by hand with the release's label. The workflow is generated from the
 `release` block in [`chant.config.json`](chant.config.json); regenerate it with
-`npx @intentius/chant@<version> release workflow --force` rather than editing it.
+`npx @intentius/chant@0.124.104 release workflow --force` rather than editing it.
 
 The run has three jobs:
 
@@ -16,8 +16,8 @@ The run has three jobs:
    container image from the `Dockerfile`, records the release, and pushes the
    tag `vX.Y.Z`.
 3. **publish** pushes the image to `ghcr.io/intentius/spritzer` as `X.Y.Z` and
-   `latest`, and publishes the GitHub Release with the archives, the checksums
-   and the provenance statement. The release notes are the `## [X.Y.Z]`
+   `latest` (with `X.Y.Z-amd64` and `X.Y.Z-arm64` for each platform), and
+   publishes the GitHub Release with the archives and the checksums. The release notes are the `## [X.Y.Z]`
    section of `CHANGELOG.md`, followed by GitHub's generated notes.
 
 ## Steps
@@ -37,7 +37,7 @@ The run has three jobs:
    `main`, the changelog has a `## [X.Y.Z]` section, and `build`/`vet`/`gofmt`/
    `test` all pass. It then dispatches the Release workflow with the label
    `X.Y.Z`. To see the label chant would pick on its own, run
-   `npx @intentius/chant@<version> release next`.
+   `npx @intentius/chant@0.124.104 release next`.
 
 3. **Watch the release run:**
 
