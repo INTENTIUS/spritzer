@@ -20,6 +20,10 @@ RUN CGO_ENABLED=0 go build \
 
 # ---- final stage ----
 FROM gcr.io/distroless/static:nonroot
+ARG VERSION=dev
+LABEL org.opencontainers.image.source="https://github.com/intentius/spritzer" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.licenses="MIT"
 COPY --from=build /out/spritzer /usr/local/bin/spritzer
 EXPOSE 4290
 USER nonroot:nonroot

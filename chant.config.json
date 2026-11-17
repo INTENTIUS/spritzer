@@ -1,0 +1,32 @@
+{
+  "release": {
+    "tag": "v{version}",
+    "legacyTags": ["v"],
+    "green": "forge-checks",
+    "images": [
+      {
+        "name": "spritzer",
+        "build": "{ docker buildx inspect chant-release >/dev/null 2>&1 || docker buildx create --name chant-release --driver docker-container >/dev/null; } && mkdir -p build/images && docker buildx build --builder chant-release --no-cache --platform linux/amd64,linux/arm64 --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH=\"$SOURCE_DATE_EPOCH\" --build-arg VERSION=\"$CHANT_RELEASE_LABEL\" --output type=oci,dest=build/images/spritzer.tar,rewrite-timestamp=true -f Dockerfile . >&2",
+        "archive": "build/images/spritzer.tar",
+        "platforms": ["linux/amd64", "linux/arm64"]
+      }
+    ],
+    "artifacts": [{ "name": "goreleaser", "goreleaser": {} }],
+    "publish": [
+      {
+        "type": "oci",
+        "image": "build/images/spritzer.tar",
+        "repository": "ghcr.io/intentius/spritzer",
+        "tags": ["{label}", "latest"]
+      },
+      {
+        "type": "forge",
+        "forge": "github",
+        "repo": "INTENTIUS/spritzer",
+        "assets": ["artifact:goreleaser"],
+        "notes": { "file": "CHANGELOG.md", "heading": "## [{version}]", "generate": "forge" }
+      }
+    ],
+    "workflow": { "trigger": "dispatch", "file": ".github/workflows/release.yml" }
+  }
+}
