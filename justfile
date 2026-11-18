@@ -64,24 +64,9 @@ docs-build:
 docs-serve:
     mkdocs serve
 
-# Start a release: preflight checks, then dispatch the Release workflow, which
-# cuts the newest green commit of main with `chant release`, tags it vVERSION,
-# and publishes the binaries, checksums and GHCR image. Usage:
-#   just release 0.2.0
-# The CHANGELOG must already have a `## [VERSION]` section (see RELEASING.md).
-release version:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    [ -z "$(git status --porcelain)" ] || { echo "✗ working tree not clean"; exit 1; }
-    [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "✗ not on main"; exit 1; }
-    git pull --ff-only origin main
-    grep -q "## \[{{version}}\]" CHANGELOG.md || { echo "✗ CHANGELOG.md has no '## [{{version}}]' section"; exit 1; }
-    echo "→ preflight: build / vet / gofmt / test"
-    go build ./...
-    go vet ./...
-    [ -z "$(gofmt -l .)" ] || { echo "✗ gofmt reported files"; exit 1; }
-    go test ./...
-    echo "→ dispatching the Release workflow for {{version}}"
-    gh workflow run publish.yml --repo INTENTIUS/spritzer --ref main -f label={{version}}
-    echo "✓ dispatched {{version}}; the Release workflow cuts v{{version}} and publishes it."
-    echo "  watch: gh run watch --repo INTENTIUS/spritzer"
+# Dispatch the Release workflow (see RELEASING.md). The label is `auto` or a
+# bare version. Usage:
+#   just release          # label auto
+#   just release 0.6.5
+release label="auto":
+    gh workflow run publish.yml --repo INTENTIUS/spritzer --ref main -f label={{label}}
