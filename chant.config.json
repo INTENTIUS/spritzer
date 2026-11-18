@@ -29,7 +29,7 @@
         "forge": "github",
         "repo": "INTENTIUS/spritzer",
         "assets": ["artifact:goreleaser"],
-        "notes": { "file": "CHANGELOG.md", "heading": "## [{version}]", "generate": "forge" }
+        "notes": { "generate": "commits", "exclude": ["docs", "test", "chore"] }
       }
     ],
     "workflow": { "trigger": "dispatch", "file": ".github/workflows/publish.yml" }
