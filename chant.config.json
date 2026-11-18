@@ -32,6 +32,6 @@
         "notes": { "file": "CHANGELOG.md", "heading": "## [{version}]", "generate": "forge" }
       }
     ],
-    "workflow": { "trigger": "dispatch", "file": ".github/workflows/release.yml" }
+    "workflow": { "trigger": "dispatch", "file": ".github/workflows/publish.yml" }
   }
 }

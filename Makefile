@@ -58,4 +58,4 @@ release:
 	git pull --ff-only origin main
 	@grep -q "## \[$(V)\]" CHANGELOG.md || { echo "CHANGELOG.md has no '## [$(V)]' section"; exit 1; }
 	go build ./... && go vet ./... && test -z "$$(gofmt -l .)" && go test ./...
-	gh workflow run release.yml --repo INTENTIUS/spritzer --ref main -f label=$(V)
+	gh workflow run publish.yml --repo INTENTIUS/spritzer --ref main -f label=$(V)

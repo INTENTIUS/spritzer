@@ -82,6 +82,6 @@ release version:
     [ -z "$(gofmt -l .)" ] || { echo "✗ gofmt reported files"; exit 1; }
     go test ./...
     echo "→ dispatching the Release workflow for {{version}}"
-    gh workflow run release.yml --repo INTENTIUS/spritzer --ref main -f label={{version}}
+    gh workflow run publish.yml --repo INTENTIUS/spritzer --ref main -f label={{version}}
     echo "✓ dispatched {{version}}; the Release workflow cuts v{{version}} and publishes it."
     echo "  watch: gh run watch --repo INTENTIUS/spritzer"
