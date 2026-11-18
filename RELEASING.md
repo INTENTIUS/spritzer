@@ -4,7 +4,7 @@ spritzer is released with [`chant release`](https://intentius.io/chant/cli/relea
 A release is one run of the [Release workflow](.github/workflows/release.yml),
 started by hand with the release's label. The workflow is generated from the
 `release` block in [`chant.config.json`](chant.config.json); regenerate it with
-`npx @intentius/chant@0.124.104 release workflow --force` rather than editing it.
+`npx @intentius/chant@0.124.105 release workflow --force` rather than editing it.
 
 The run has three jobs:
 
@@ -37,7 +37,7 @@ The run has three jobs:
    `main`, the changelog has a `## [X.Y.Z]` section, and `build`/`vet`/`gofmt`/
    `test` all pass. It then dispatches the Release workflow with the label
    `X.Y.Z`. To see the label chant would pick on its own, run
-   `npx @intentius/chant@0.124.104 release next`.
+   `npx @intentius/chant@0.124.105 release next`.
 
 3. **Watch the release run:**
 
