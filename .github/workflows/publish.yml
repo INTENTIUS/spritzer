@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       label:
-        description: The release's label, such as v1.4.0, or auto for the one chant release next computes
+        description: The release's label, a bare version such as 1.4.0 since the tag template adds any v (one leading v is dropped), or auto for the one chant release next computes
         required: true
         type: string
 permissions:
@@ -34,7 +34,7 @@ jobs:
       - id: green
         run: |
           commit="$GITHUB_SHA"
-          label="$CHANT_RELEASE_LABEL"; if [ "$label" = auto ]; then rc=0; git ls-remote --exit-code --heads origin chant/lifecycle >/dev/null || rc=$?; if [ "$rc" = 0 ]; then git fetch origin chant/lifecycle:chant/lifecycle; elif [ "$rc" != 2 ]; then exit "$rc"; fi; next="$(npx --yes @intentius/chant@0.124.105 release next --at "$commit" --json)" || { echo "release next found no label for $commit, so no release is cut: $next" >&2; exit 1; }; label="$(printf '%s' "$next" | node -e 'const f=process.argv[1];const t=f?require("fs").readFileSync(f,"utf8"):require("fs").readFileSync(0,"utf8");const d=JSON.parse(t);process.stdout.write(String(d.label??""))')"; fi
+          label="$CHANT_RELEASE_LABEL"; if [ "$label" = auto ]; then rc=0; git ls-remote --exit-code --heads origin chant/lifecycle >/dev/null || rc=$?; if [ "$rc" = 0 ]; then git fetch origin chant/lifecycle:chant/lifecycle; elif [ "$rc" != 2 ]; then exit "$rc"; fi; next="$(npx --yes @intentius/chant@0.124.107 release next --at "$commit" --json)" || { echo "release next found no label for $commit, so no release is cut: $next" >&2; exit 1; }; label="$(printf '%s' "$next" | node -e 'const f=process.argv[1];const t=f?require("fs").readFileSync(f,"utf8"):require("fs").readFileSync(0,"utf8");const d=JSON.parse(t);process.stdout.write(String(d.label??""))')"; fi
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "label=$label" >> "$GITHUB_OUTPUT"
   cut:
@@ -71,7 +71,7 @@ jobs:
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           platforms: "arm64"
-      - run: npx --yes @intentius/chant@0.124.105 release doctor --from cut
+      - run: npx --yes @intentius/chant@0.124.107 release doctor --from cut
       - name: goreleaser v2.19.0
         run: "mkdir -p \"$RUNNER_TEMP/goreleaser\" && curl -fsSL -o \"$RUNNER_TEMP/goreleaser/goreleaser.tar.gz\" https://github.com/goreleaser/goreleaser/releases/download/v2.19.0/goreleaser_Linux_x86_64.tar.gz && echo \"ebc3194ad1d1b1787614405285a0039665cd4c5bd3305215a1b201600f90630b  $RUNNER_TEMP/goreleaser/goreleaser.tar.gz\" | sha256sum -c - && tar -xzf \"$RUNNER_TEMP/goreleaser/goreleaser.tar.gz\" -C \"$RUNNER_TEMP/goreleaser\" goreleaser && echo \"CHANT_GORELEASER=$RUNNER_TEMP/goreleaser/goreleaser\" >> \"$GITHUB_ENV\""
       - run: git fetch origin 'refs/tags/ci/*:refs/tags/ci/*'
@@ -79,10 +79,10 @@ jobs:
       - run: |
           git config user.name "chant release"
           git config user.email "chant-release@localhost"
-          npx --yes @intentius/chant@0.124.105 release cut "$CHANT_RELEASE_LABEL" --at "$CHANT_RELEASE_COMMIT" --yes --json > "$RUNNER_TEMP/chant-cut.json"
+          npx --yes @intentius/chant@0.124.107 release cut "$CHANT_RELEASE_LABEL" --at "$CHANT_RELEASE_COMMIT" --yes --json > "$RUNNER_TEMP/chant-cut.json"
           tag="$(node -e 'const f=process.argv[1];const t=f?require("fs").readFileSync(f,"utf8"):require("fs").readFileSync(0,"utf8");const d=JSON.parse(t);process.stdout.write(String(d.tag?.name??""))' "$RUNNER_TEMP/chant-cut.json")"
           if [ -n "$tag" ]; then git push origin "refs/tags/$tag"; fi
-      - run: npx --yes @intentius/chant@0.124.105 release artifacts "$CHANT_RELEASE_LABEL" --no-build -o "$RUNNER_TEMP/chant-release-artifacts"
+      - run: npx --yes @intentius/chant@0.124.107 release artifacts "$CHANT_RELEASE_LABEL" --no-build -o "$RUNNER_TEMP/chant-release-artifacts"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: chant-release-artifacts
@@ -132,11 +132,11 @@ jobs:
         with:
           name: chant-release-images
           path: build/images
-      - run: npx --yes @intentius/chant@0.124.105 release images "$CHANT_RELEASE_LABEL" --no-build -o "$RUNNER_TEMP/chant-release-digests.json"
+      - run: npx --yes @intentius/chant@0.124.107 release images "$CHANT_RELEASE_LABEL" --no-build -o "$RUNNER_TEMP/chant-release-digests.json"
       - run: echo "CHANT_RELEASE_DIGESTS=$RUNNER_TEMP/chant-release-digests.json" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: chant-release-artifacts
           path: ${{ runner.temp }}/chant-release-artifacts
-      - run: npx --yes @intentius/chant@0.124.105 release artifacts "$CHANT_RELEASE_LABEL" --from "$RUNNER_TEMP/chant-release-artifacts"
-      - run: npx --yes @intentius/chant@0.124.105 release publish "$CHANT_RELEASE_LABEL" --yes
+      - run: npx --yes @intentius/chant@0.124.107 release artifacts "$CHANT_RELEASE_LABEL" --from "$RUNNER_TEMP/chant-release-artifacts"
+      - run: npx --yes @intentius/chant@0.124.107 release publish "$CHANT_RELEASE_LABEL" --yes
